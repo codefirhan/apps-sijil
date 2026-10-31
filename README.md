@@ -72,19 +72,3 @@ apps-sijil/
 ├── requirements.txt      # Dependensi Python
 ├── .env                  # Token bot Telegram Anda
 └── README.md             # Dokumentasi
-```
-
----
-
-## 🚀 Cara Menjalankan Bot
-
-1. Dapatkan token dari `@BotFather` di Telegram.
-2. Masukkan ke file `.env`:
-   ```env
-   BOT_TOKEN=123456789:ABCdefGhIjkLmNoPqRsTuVwXyZ
-   ```
-3. Jalankan bot:
-   ```bash
-   ./venv/bin/python run.py
-   ```
-4. Buka bot di Telegram dan kirim `/start`.
