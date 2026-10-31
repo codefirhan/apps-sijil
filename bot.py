@@ -81,6 +81,57 @@ logger = logging.getLogger(__name__)
     STATE_EDIT_DELETE_CONFIRM,
 ) = range(42)
 
+def _clean_code(val: Any) -> str:
+    return str(val if val is not None else "-").replace("`", "'")
+
+
+def safe_truncate_markdown(text: str, max_len: int = 3800) -> str:
+    """Memotong teks panjang pada batas baris (newline) agar tag Markdown tidak terpotong di tengah."""
+    if len(text) <= max_len:
+        return text
+    lines = text.split("\n")
+    kept = []
+    cur_len = 0
+    for line in lines:
+        if cur_len + len(line) + 1 > max_len:
+            break
+        kept.append(line)
+        cur_len += len(line) + 1
+    kept.append("\n...(Rincian lengkap tercetak penuh di Dokumen PDF / Gambar)")
+    return "\n".join(kept)
+
+
+async def safe_edit_or_reply(update: Update, text: str, reply_markup: InlineKeyboardMarkup = None):
+    """Mengirim atau mengedit pesan dengan fallback otomatis jika terdapat karakter Markdown khusus."""
+    safe_text = safe_truncate_markdown(text, 3850)
+    if update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(
+                text=safe_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            plain_text = safe_text.replace("*", "").replace("`", "")
+            await update.callback_query.edit_message_text(
+                text=plain_text,
+                reply_markup=reply_markup
+            )
+    else:
+        try:
+            await update.message.reply_text(
+                text=safe_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            plain_text = safe_text.replace("*", "").replace("`", "")
+            await update.message.reply_text(
+                text=plain_text,
+                reply_markup=reply_markup
+            )
+
+
 def format_detailed_person_report_text(report: dict) -> str:
     """
     Menyusun rincian laporan mingguan per orang secara lengkap dan detail (Senin s/d Minggu)
@@ -88,12 +139,12 @@ def format_detailed_person_report_text(report: dict) -> str:
     Keterangan Alasan, Pengajian, Piket, dan Tata Krama (Jijyah) tanpa disingkat.
     """
     pengajian_status_str = "Hadir (✓)" if report["pengajian_status"] == 1 else "Tidak (✓)"
-    jijyah_val = f"Rp {report['tata_krama_jijyah']}" if report.get("tata_krama_jijyah") else "-"
-    ahad_nominal = f"Rp {report['tata_krama_ahad']}" if report.get("tata_krama_ahad") else "-"
+    jijyah_val = f"Rp {_clean_code(report['tata_krama_jijyah'])}" if report.get("tata_krama_jijyah") else "-"
+    ahad_nominal = f"Rp {_clean_code(report['tata_krama_ahad'])}" if report.get("tata_krama_ahad") else "-"
 
     lines = [
-        f"👤 *NAMA PELAPOR:* `{report['nama']}`",
-        f"🗓 *Ahad Ke:* `{report['ahad_ke']}` | *Pekan:* `{report['bulan']}` | *Posko:* `{report.get('posko', 'TANGKIL')}`",
+        f"👤 *NAMA PELAPOR:* `{_clean_code(report['nama'])}`",
+        f"🗓 *Ahad Ke:* `{_clean_code(report['ahad_ke'])}` | *Pekan:* `{_clean_code(report['bulan'])}` | *Posko:* `{_clean_code(report.get('posko', 'TANGKIL'))}`",
         f"📊 *Keterisian:* {report['filled_days_count']} dari 7 hari",
     ]
     days = ["SENIN", "SELASA", "RABU", "KAMIS", "JUM'AT", "SABTU", "MINGGU"]
@@ -101,32 +152,32 @@ def format_detailed_person_report_text(report: dict) -> str:
         d_data = report["days"][d]
         if d_data["solat_malam"] != "":
             if d_data["solat_malam"] != "-":
-                sm_str = f"Jam {d_data['solat_malam']}"
-                dz_str = f"{d_data['jumlah_dzikir']}"
+                sm_str = f"Jam {_clean_code(d_data['solat_malam'])}"
+                dz_str = f"{_clean_code(d_data['jumlah_dzikir'])}"
             else:
-                alasan_sm = d_data.get("solat_malam_alasan") or "Terlewat"
+                alasan_sm = _clean_code(d_data.get("solat_malam_alasan") or "Terlewat")
                 sm_str = f"Tidak melaksanakan (Alasan: {alasan_sm})"
                 dz_str = "-"
 
             if d_data["dhuha"] == "✓":
                 dh_str = "Ya (✓)"
             else:
-                alasan_dh = d_data.get("dhuha_alasan") or "Terlewat"
+                alasan_dh = _clean_code(d_data.get("dhuha_alasan") or "Terlewat")
                 dh_str = f"Tidak melaksanakan (Alasan: {alasan_dh})"
 
             if d_data["puasa"] == "✓":
                 p_str = "Ya (✓)"
             elif d in ["SENIN", "KAMIS"]:
-                alasan_p = d_data.get("puasa_alasan") or "Tidak Puasa"
+                alasan_p = _clean_code(d_data.get("puasa_alasan") or "Tidak Puasa")
                 p_str = f"Tidak melaksanakan (Alasan: {alasan_p})"
             else:
                 p_str = "-"
 
-            rw_val = d_data["rowatib"] or "5 waktu"
+            rw_val = _clean_code(d_data["rowatib"] or "5 waktu")
             if rw_val != "5 waktu" and d_data.get("rowatib_alasan"):
-                rw_str = f"{rw_val} (Alasan: {d_data['rowatib_alasan']})"
+                rw_str = f"{rw_val} (Alasan: {_clean_code(d_data['rowatib_alasan'])})"
             elif d_data.get("rowatib_alasan"):
-                rw_str = f"{rw_val} (Catatan: {d_data['rowatib_alasan']})"
+                rw_str = f"{rw_val} (Catatan: {_clean_code(d_data['rowatib_alasan'])})"
             else:
                 rw_str = f"{rw_val}"
 
@@ -139,7 +190,7 @@ def format_detailed_person_report_text(report: dict) -> str:
                 f"   • Solat Rowatib: `{rw_str}`"
             )
         else:
-            lines.append(f"⚪ *{d}:* _Belum diisi_")
+            lines.append(f"⚪ *{d}:* `Belum diisi`")
 
     ket_rows = report.get("keterangan_rows", {})
     ket_lines = []
@@ -151,8 +202,8 @@ def format_detailed_person_report_text(report: dict) -> str:
     ]:
         val_str = ket_rows.get(k_key, "").strip()
         if val_str:
-            clean_str = val_str.replace("<br/>", "; ")
-            ket_lines.append(f"   • {k_label}: {clean_str}")
+            clean_str = _clean_code(val_str.replace("<br/>", "; "))
+            ket_lines.append(f"   • {k_label}: `{clean_str}`")
 
     if ket_lines:
         lines.append("📝 *Keterangan / Alasan:*\n" + "\n".join(ket_lines))
@@ -160,8 +211,8 @@ def format_detailed_person_report_text(report: dict) -> str:
         lines.append("📝 *Keterangan / Alasan:* `Lengkap / Tanpa uzur`")
 
     lines.append(
-        f"🕌 *Pengajian:* {pengajian_status_str}\n"
-        f"🧹 *Piket:* Tidak (✓) [Statis]\n"
+        f"🕌 *Pengajian:* `{pengajian_status_str}`\n"
+        f"🧹 *Piket:* `Tidak (✓) [Statis]`\n"
         f"💰 *Tata Krama:* Ahad: `{ahad_nominal}` | Jijyah: `{jijyah_val}`"
     )
     return "\n".join(lines)
@@ -284,9 +335,6 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             )
             toggle_btn = InlineKeyboardButton("👥 Lihat Keseluruhan Anggota Posko", callback_data="menu_recap_all")
 
-        if len(text) > 4000:
-            text = text[:3950] + "\n\n_...(Rincian lengkap dapat diunduh melalui menu Cetak Laporan)_"
-
         keyboard = [
             [toggle_btn],
             [InlineKeyboardButton("📄 Cetak Laporan Pekan Ini", callback_data=f"quick_print_{mon.strftime('%Y-%m-%d')}")],
@@ -294,7 +342,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("📝 Input Laporan", callback_data="menu_input")],
             [InlineKeyboardButton("🔙 Kembali ke Menu", callback_data="menu_main")]
         ]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await safe_edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
         return ConversationHandler.END
 
     elif data == "menu_help":
@@ -2141,6 +2189,22 @@ async def print_target_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     return await print_show_week_selection(update, context)
 
+def get_safe_print_monday(context: ContextTypes.DEFAULT_TYPE):
+    """Mengambil (mon_str, monday_date) dengan fallback aman ke pekan berjalan jika user_data ter-reset."""
+    mon_str = context.user_data.get("print_mon_str")
+    if mon_str:
+        try:
+            monday_date = datetime.datetime.strptime(mon_str, "%Y-%m-%d").date()
+            return mon_str, monday_date
+        except Exception:
+            pass
+    today = datetime.date.today()
+    mon_dt, _, _, _ = database.calculate_week_info(today)
+    mon_str = mon_dt.strftime("%Y-%m-%d")
+    context.user_data["print_mon_str"] = mon_str
+    return mon_str, mon_dt
+
+
 async def print_show_week_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     cur_name = database.get_user_setting(chat_id)
@@ -2153,7 +2217,7 @@ async def print_show_week_selection(update: Update, context: ContextTypes.DEFAUL
     last_week_dt = today - datetime.timedelta(days=7)
     mon_last_week, sun_last_week, calc_last, b_last = database.calculate_week_info(last_week_dt)
 
-    available_weeks = database.get_available_weeks(cur_name)
+    available_weeks = database.get_available_weeks(None if target_mode == "all" else cur_name)
 
     pekan_this = database.get_pekan_info(cur_name, mon_this_week.strftime('%Y-%m-%d'))
     ahad_this = pekan_this.get("ahad_ke") or calc_this
@@ -2164,7 +2228,7 @@ async def print_show_week_selection(update: Update, context: ContextTypes.DEFAUL
     if target_mode == "all":
         target_str = f"👥 *Keseluruhan Orang* ({len(all_names)} Anggota)"
     else:
-        target_str = f"👤 *Nama Aktif:* `{cur_name}`"
+        target_str = f"👤 *Nama Aktif:* `{_clean_code(cur_name)}`"
 
     text = (
         "📄 *CETAK LAPORAN PELAKSANAAN AMANAH*\n"
@@ -2188,10 +2252,7 @@ async def print_show_week_selection(update: Update, context: ContextTypes.DEFAUL
     keyboard.append([InlineKeyboardButton("🔙 Ganti Target Laporan", callback_data="menu_print")])
     keyboard.append([InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")])
 
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    else:
-        await update.message.reply_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await safe_edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
     return STATE_PRINT_DATE
 
 async def print_date_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2202,7 +2263,7 @@ async def print_date_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_main":
         text, reply_markup = build_main_menu(chat_id)
-        await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
+        await safe_edit_or_reply(update, text, reply_markup)
         return ConversationHandler.END
 
     if data in ("menu_print", "menu_print_target"):
@@ -2218,7 +2279,7 @@ async def print_date_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Format: `DD-MM-YYYY` atau `YYYY-MM-DD` (contoh: `07-09-2026`):"
         )
         keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="menu_print_week")]]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await safe_edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
         return STATE_PRINT_MANUAL_DATE
 
     if data.startswith("sel_week_") or data.startswith("quick_print_"):
@@ -2255,8 +2316,7 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = update.effective_chat.id
     cur_name = database.get_user_setting(chat_id)
     target_mode = context.user_data.get("print_target_mode", "active")
-    mon_str = context.user_data.get("print_mon_str")
-    monday_date = datetime.datetime.strptime(mon_str, "%Y-%m-%d").date()
+    mon_str, monday_date = get_safe_print_monday(context)
 
     if target_mode == "all":
         all_names = database.get_all_names()
@@ -2270,17 +2330,15 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
             "⚙️ *PENGATURAN CETAK KESELURUHAN ORANG (DETAIL PER POSKO)*\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👥 *Target:* Keseluruhan Anggota ({len(all_names)} Orang)\n"
-            f"📅 *Pekan:* `{all_data[0]['bulan']}`\n"
+            f"📅 *Pekan:* `{_clean_code(all_data[0]['bulan'])}`\n"
             f"🗓 *Ahad Ke:* `{cur_ahad}`\n"
             f"🏢 *Posko:* `TANGKIL` (Statis)\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "📋 *Rincian Detail Laporan Seluruh Anggota:*\n\n"
             f"{members_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "Sesuaikan Ahad Ke posko jika diperlukan:"
+            "Pilih Ahad Ke (jika perlu disesuaikan) atau langsung klik tombol Cetak di bawah:"
         )
-        if len(text) > 4000:
-            text = text[:3950] + "\n\n_...(Rincian lengkap tercetak penuh di PDF/Gambar)_"
 
         keyboard = [
             [
@@ -2290,7 +2348,10 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
                 InlineKeyboardButton(f"{'✅ ' if cur_ahad==4 else ''}Ahad 4", callback_data="set_ahadke_4"),
                 InlineKeyboardButton(f"{'✅ ' if cur_ahad==5 else ''}Ahad 5", callback_data="set_ahadke_5"),
             ],
-            [InlineKeyboardButton("🚀 LANJUT PILIH FORMAT CETAK", callback_data="proceed_format")],
+            [InlineKeyboardButton("🖼 Kirim Sebagai Gambar (Foto)", callback_data="fmt_img")],
+            [InlineKeyboardButton("📄 Kirim Sebagai Dokumen PDF", callback_data="fmt_pdf")],
+            [InlineKeyboardButton("📦 Kirim Keduanya (Gambar + PDF)", callback_data="fmt_both")],
+            [InlineKeyboardButton("🚀 Menu Pilih Format Cetak", callback_data="proceed_format")],
             [InlineKeyboardButton("🔙 Pilih Pekan Lain", callback_data="menu_print_week")]
         ]
     else:
@@ -2302,10 +2363,8 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{detailed_member_str}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            "Silakan sesuaikan Ahad Ke, Pengajian, atau Jijyah jika diperlukan:"
+            "Silakan sesuaikan Ahad Ke, Pengajian, atau Jijyah, atau langsung klik tombol Cetak:"
         )
-        if len(text) > 4000:
-            text = text[:3950] + "\n\n_...(Rincian lengkap tercetak penuh di PDF/Gambar)_"
 
         toggle_pengajian_text = "Ubah Pengajian (ke Tidak)" if week_data["pengajian_status"] == 1 else "Ubah Pengajian (ke Hadir)"
         cur_ahad = week_data["ahad_ke"]
@@ -2327,14 +2386,14 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
                 InlineKeyboardButton("✏️ Jijyah: Manual (Ketik)", callback_data="set_jijyah_manual"),
                 InlineKeyboardButton("❌ Kosongkan Jijyah", callback_data="set_jijyah_none")
             ],
-            [InlineKeyboardButton("🚀 LANJUT PILIH FORMAT CETAK", callback_data="proceed_format")],
+            [InlineKeyboardButton("🖼 Kirim Sebagai Gambar (Foto)", callback_data="fmt_img")],
+            [InlineKeyboardButton("📄 Kirim Sebagai Dokumen PDF", callback_data="fmt_pdf")],
+            [InlineKeyboardButton("📦 Kirim Keduanya (Gambar + PDF)", callback_data="fmt_both")],
+            [InlineKeyboardButton("🚀 Menu Pilih Format Cetak", callback_data="proceed_format")],
             [InlineKeyboardButton("🔙 Pilih Pekan Lain", callback_data="menu_print_week")]
         ]
 
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-    else:
-        await update.message.reply_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await safe_edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
     return STATE_PRINT_SETTINGS
 
 async def print_settings_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2344,10 +2403,14 @@ async def print_settings_action(update: Update, context: ContextTypes.DEFAULT_TY
     chat_id = update.effective_chat.id
     cur_name = database.get_user_setting(chat_id)
     target_mode = context.user_data.get("print_target_mode", "active")
-    mon_str = context.user_data.get("print_mon_str")
+    mon_str, monday_date = get_safe_print_monday(context)
 
     if data in ("menu_print", "menu_print_week"):
         return await print_show_week_selection(update, context)
+
+    if data.startswith("fmt_"):
+        fmt_choice = data.replace("fmt_", "")
+        return await execute_report_output(monday_date, cur_name, target_mode, fmt_choice, update, context)
 
     current_meta = database.get_pekan_info(cur_name, mon_str)
 
@@ -2389,17 +2452,17 @@ async def print_settings_action(update: Update, context: ContextTypes.DEFAULT_TY
             "Silakan ketik nominal yang diinginkan (contoh: `2000`, `67000`, `50000`):"
         )
         keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="back_settings")]]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await safe_edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
         return STATE_PRINT_MANUAL_JIJYAH
 
     elif data == "proceed_format":
-        target_info = "seluruh anggota posko (Rekap + Detail tiap anggota)" if target_mode == "all" else f"pelapor `{cur_name}`"
+        target_info = "seluruh anggota posko (Detail Lengkap tiap anggota)" if target_mode == "all" else f"pelapor `{_clean_code(cur_name)}`"
         text = (
             "🖨 *PILIH FORMAT CETAK LAPORAN*\n\n"
             f"Hasil laporan siap dicetak untuk {target_info}.\n"
             "Pilih format yang Anda inginkan:\n\n"
             "• *🖼 Gambar (Foto):* Tampil langsung di chat, mudah disimpan dan dibagikan.\n"
-            "• *📄 Dokumen PDF:* Format resmi dokumen siap cetak kertas (Landscape A4: Rekap & Detail Lengkap).\n"
+            "• *📄 Dokumen PDF:* Format resmi dokumen siap cetak kertas (Landscape A4: Detail Lengkap).\n"
             "• *📦 Keduanya:* Kirimkan Gambar sekaligus dokumen PDF resmi."
         )
         keyboard = [
@@ -2408,14 +2471,16 @@ async def print_settings_action(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("📦 Kirim Keduanya (Gambar + PDF)", callback_data="fmt_both")],
             [InlineKeyboardButton("🔙 Kembali ke Pengaturan", callback_data="back_settings")]
         ]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await safe_edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
         return STATE_PRINT_FORMAT
+
+    return await show_print_settings(update, context)
 
 async def print_manual_jijyah_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     val = update.message.text.strip()
     chat_id = update.effective_chat.id
     cur_name = database.get_user_setting(chat_id)
-    mon_str = context.user_data.get("print_mon_str")
+    mon_str, _ = get_safe_print_monday(context)
 
     database.save_pekan_jijyah(cur_name, mon_str, val)
     return await show_print_settings(update, context)
@@ -2427,8 +2492,7 @@ async def print_format_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = update.effective_chat.id
     cur_name = database.get_user_setting(chat_id)
     target_mode = context.user_data.get("print_target_mode", "active")
-    mon_str = context.user_data.get("print_mon_str")
-    monday_date = datetime.datetime.strptime(mon_str, "%Y-%m-%d").date()
+    mon_str, monday_date = get_safe_print_monday(context)
 
     if data == "back_settings":
         return await show_print_settings(update, context)
@@ -2438,7 +2502,7 @@ async def print_format_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def execute_report_output(monday_date: datetime.date, nama: str, target_mode: str, fmt: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await update.callback_query.edit_message_text("⏳ *Sedang menyusun dan merender laporan...*", parse_mode="Markdown")
+    await safe_edit_or_reply(update, "⏳ *Sedang menyusun dan merender laporan...*")
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -2464,17 +2528,23 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
             caption_text = (
                 "📄 *LAPORAN PELAKSANAAN AMANAH PER POSKO (DETAIL LENGKAP)*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🏢 *Posko:* `{POSKO_NAME}`\n"
+                f"🏢 *Posko:* `{_clean_code(POSKO_NAME)}`\n"
                 f"🗓 *Ahad Ke:* `{week_meta['ahad_ke']}`\n"
-                f"📅 *Pekan:* `{week_meta['bulan']}`\n"
-                f"👥 *Total Anggota:* {len(all_names)} Orang ({', '.join(all_names)})\n"
+                f"📅 *Pekan:* `{_clean_code(week_meta['bulan'])}`\n"
+                f"👥 *Total Anggota:* {len(all_names)} Orang (`{_clean_code(', '.join(all_names))}`)\n"
                 "📋 *Isi:* Tabel Detail Harian Lengkap (Senin - Minggu: Jam Solat Malam, Jumlah Dzikir, Solat Dhuha, Puasa Senin & Kamis, Solat Rowatib, Keterangan, Pengajian, Piket, Tata Krama)"
             )
+            if len(caption_text) > 950:
+                caption_text = caption_text[:950] + "..."
 
             if fmt in ["img", "both"]:
                 if len(img_paths) == 1:
                     with open(img_paths[0], "rb") as photo_file:
-                        await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=caption_text, parse_mode="Markdown")
+                        try:
+                            await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=caption_text, parse_mode="Markdown")
+                        except Exception:
+                            photo_file.seek(0)
+                            await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=caption_text.replace("*", "").replace("`", ""))
                 elif len(img_paths) <= 10:
                     media = []
                     opened_files = []
@@ -2484,31 +2554,56 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
                         if idx == 0:
                             cap = caption_text + f"\n*(Halaman 1 dari {len(img_paths)})*"
                         else:
-                            cap = f"📄 *Laporan Detail Posko {POSKO_NAME}* — Halaman {idx + 1} dari {len(img_paths)}"
+                            cap = f"📄 *Laporan Detail Posko {_clean_code(POSKO_NAME)}* — Halaman {idx + 1} dari {len(img_paths)}"
                         media.append(InputMediaPhoto(media=f, caption=cap, parse_mode="Markdown"))
                     try:
                         await context.bot.send_media_group(chat_id=chat_id, media=media)
-                    finally:
+                    except Exception:
                         for f in opened_files:
                             f.close()
+                        opened_files = []
+                        for idx, p in enumerate(img_paths):
+                            with open(p, "rb") as photo_file:
+                                plain_cap = (caption_text if idx == 0 else f"Laporan Detail Posko {POSKO_NAME} - Halaman {idx + 1}").replace("*", "").replace("`", "")
+                                await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=plain_cap)
+                    finally:
+                        for f in opened_files:
+                            try:
+                                f.close()
+                            except Exception:
+                                pass
                 else:
                     for idx, p in enumerate(img_paths):
                         with open(p, "rb") as photo_file:
                             if idx == 0:
                                 cap = caption_text + f"\n*(Halaman 1 dari {len(img_paths)})*"
                             else:
-                                cap = f"📄 *Laporan Detail Posko {POSKO_NAME}* — Halaman {idx + 1} dari {len(img_paths)}"
-                            await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=cap, parse_mode="Markdown")
+                                cap = f"📄 *Laporan Detail Posko {_clean_code(POSKO_NAME)}* — Halaman {idx + 1} dari {len(img_paths)}"
+                            try:
+                                await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=cap, parse_mode="Markdown")
+                            except Exception:
+                                photo_file.seek(0)
+                                await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=cap.replace("*", "").replace("`", ""))
 
             if fmt in ["pdf", "both"]:
                 with open(pdf_path, "rb") as doc_file:
-                    await context.bot.send_document(
-                        chat_id=chat_id,
-                        document=doc_file,
-                        filename=f"Laporan_Amanah_Posko_{POSKO_NAME}_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}.pdf",
-                        caption=caption_text if fmt == "pdf" else f"📄 *Dokumen PDF Resmi Posko {POSKO_NAME} (Detail Lengkap Tiap Anggota)*",
-                        parse_mode="Markdown"
-                    )
+                    doc_cap = caption_text if fmt == "pdf" else f"📄 *Dokumen PDF Resmi Posko {_clean_code(POSKO_NAME)} (Detail Lengkap Tiap Anggota)*"
+                    try:
+                        await context.bot.send_document(
+                            chat_id=chat_id,
+                            document=doc_file,
+                            filename=f"Laporan_Amanah_Posko_{POSKO_NAME}_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}.pdf",
+                            caption=doc_cap,
+                            parse_mode="Markdown"
+                        )
+                    except Exception:
+                        doc_file.seek(0)
+                        await context.bot.send_document(
+                            chat_id=chat_id,
+                            document=doc_file,
+                            filename=f"Laporan_Amanah_Posko_{POSKO_NAME}_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}.pdf",
+                            caption=doc_cap.replace("*", "").replace("`", "")
+                        )
 
             for path in [pdf_path] + img_paths:
                 try:
@@ -2546,34 +2641,53 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
             caption_text = (
                 f"📄 *LAPORAN PELAKSANAAN AMANAH*\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"👤 *Nama:* `{nama}`\n"
+                f"👤 *Nama:* `{_clean_code(nama)}`\n"
                 f"🗓 *Ahad Ke:* `{week_data['ahad_ke']}`\n"
-                f"📅 *Pekan:* `{week_data['bulan']}`\n"
+                f"📅 *Pekan:* `{_clean_code(week_data['bulan'])}`\n"
                 f"🏢 *Posko:* `TANGKIL` (Statis)\n"
                 f"🕌 *Pengajian:* {'Hadir (✓)' if week_data['pengajian_status'] == 1 else 'Tidak (✓)'}\n"
                 f"🧹 *Piket:* Tidak (✓) [Statis]\n"
-                f"💰 *Jijyah:* `{week_data['tata_krama_jijyah'] or '-'}`\n"
+                f"💰 *Jijyah:* `{_clean_code(week_data['tata_krama_jijyah'] or '-')}`\n"
                 f"📊 *Status:* {week_data['filled_days_count']} dari 7 hari terisi"
             )
 
             if fmt in ["img", "both"]:
                 with open(img_path, "rb") as photo_file:
-                    await context.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=photo_file,
-                        caption=caption_text if fmt == "img" else (caption_text + "\n*(Pratinjau Gambar)*"),
-                        parse_mode="Markdown"
-                    )
+                    img_cap = caption_text if fmt == "img" else (caption_text + "\n*(Pratinjau Gambar)*")
+                    try:
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo_file,
+                            caption=img_cap,
+                            parse_mode="Markdown"
+                        )
+                    except Exception:
+                        photo_file.seek(0)
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo_file,
+                            caption=img_cap.replace("*", "").replace("`", "")
+                        )
 
             if fmt in ["pdf", "both"]:
                 with open(pdf_path, "rb") as doc_file:
-                    await context.bot.send_document(
-                        chat_id=chat_id,
-                        document=doc_file,
-                        filename=f"Laporan_Amanah_{nama}_Ahad_Ke_{week_data['ahad_ke']}.pdf",
-                        caption=caption_text if fmt == "pdf" else "📄 *File Dokumen PDF Resmi*",
-                        parse_mode="Markdown"
-                    )
+                    doc_cap = caption_text if fmt == "pdf" else "📄 *File Dokumen PDF Resmi*"
+                    try:
+                        await context.bot.send_document(
+                            chat_id=chat_id,
+                            document=doc_file,
+                            filename=f"Laporan_Amanah_{nama}_Ahad_Ke_{week_data['ahad_ke']}.pdf",
+                            caption=doc_cap,
+                            parse_mode="Markdown"
+                        )
+                    except Exception:
+                        doc_file.seek(0)
+                        await context.bot.send_document(
+                            chat_id=chat_id,
+                            document=doc_file,
+                            filename=f"Laporan_Amanah_{nama}_Ahad_Ke_{week_data['ahad_ke']}.pdf",
+                            caption=doc_cap.replace("*", "").replace("`", "")
+                        )
 
             for path in [pdf_path, img_path]:
                 try:
@@ -2685,6 +2799,7 @@ def main():
             CommandHandler("batal", start_command),
             CallbackQueryHandler(start_command, pattern="^menu_main$")
         ],
+        allow_reentry=True,
         per_message=False
     )
 
@@ -2692,7 +2807,10 @@ def main():
     print_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(print_start, pattern="^menu_print$"),
-            CallbackQueryHandler(print_date_chosen, pattern="^quick_print_"),
+            CallbackQueryHandler(print_target_chosen, pattern="^(ptarget_active|ptarget_all)$"),
+            CallbackQueryHandler(print_date_chosen, pattern="^(sel_week_|quick_print_|print_date_manual|menu_print_week)"),
+            CallbackQueryHandler(print_settings_action, pattern="^(set_ahadke_|toggle_pengajian|set_jijyah_|proceed_format)"),
+            CallbackQueryHandler(print_format_chosen, pattern="^(fmt_|back_settings)"),
             CommandHandler("cetak", print_start)
         ],
         states={
@@ -2707,7 +2825,7 @@ def main():
                 CallbackQueryHandler(print_date_chosen, pattern="^(menu_print|menu_print_week|menu_main)$")
             ],
             STATE_PRINT_SETTINGS: [
-                CallbackQueryHandler(print_settings_action, pattern="^(set_ahadke_|toggle_pengajian|set_jijyah_|proceed_format|menu_print|menu_print_week|back_settings)")
+                CallbackQueryHandler(print_settings_action, pattern="^(set_ahadke_|toggle_pengajian|set_jijyah_|proceed_format|fmt_|menu_print|menu_print_week|back_settings)")
             ],
             STATE_PRINT_MANUAL_JIJYAH: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, print_manual_jijyah_received),
@@ -2723,6 +2841,7 @@ def main():
             CommandHandler("menu", start_command),
             CallbackQueryHandler(start_command, pattern="^menu_main$")
         ],
+        allow_reentry=True,
         per_message=False
     )
 
@@ -2748,6 +2867,7 @@ def main():
             CallbackQueryHandler(menu_callback_handler, pattern="^menu_switch_name$"),
             CallbackQueryHandler(start_command, pattern="^menu_main$")
         ],
+        allow_reentry=True,
         per_message=False
     )
 
@@ -2825,6 +2945,7 @@ def main():
             CommandHandler("menu", start_command),
             CallbackQueryHandler(start_command, pattern="^menu_main$"),
         ],
+        allow_reentry=True,
         per_message=False,
     )
 

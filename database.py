@@ -527,12 +527,15 @@ def get_laporan_week(nama: str, monday_date: datetime.date) -> Dict[str, Any]:
         "tata_krama_jijyah": pekan_meta.get("tata_krama_jijyah", "")
     }
 
-def get_available_weeks(nama: str) -> List[Dict[str, Any]]:
-    """Mengambil daftar pekan yang terdapat input laporan di database"""
-    nama_clean = nama.strip().upper()
+def get_available_weeks(nama: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Mengambil daftar pekan yang terdapat input laporan di database (per nama atau seluruh anggota jika nama=None)"""
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT tanggal, ahad_ke FROM laporan WHERE nama = ? ORDER BY tanggal DESC", (nama_clean,))
+        if nama:
+            nama_clean = nama.strip().upper()
+            cursor.execute("SELECT DISTINCT tanggal, ahad_ke, nama FROM laporan WHERE nama = ? ORDER BY tanggal DESC", (nama_clean,))
+        else:
+            cursor.execute("SELECT DISTINCT tanggal, ahad_ke, nama FROM laporan ORDER BY tanggal DESC")
         date_rows = cursor.fetchall()
         
     weeks = {}
@@ -541,7 +544,8 @@ def get_available_weeks(nama: str) -> List[Dict[str, Any]]:
         mon, sun, calc_ahad, b_str = calculate_week_info(d)
         mon_str = mon.strftime("%Y-%m-%d")
         if mon_str not in weeks:
-            pekan_meta = get_pekan_info(nama_clean, mon_str)
+            row_nama = r["nama"] if r["nama"] else (nama.strip().upper() if nama else "FIRHAN")
+            pekan_meta = get_pekan_info(row_nama, mon_str)
             ahad_val = pekan_meta.get("ahad_ke") or r["ahad_ke"] or calc_ahad
             weeks[mon_str] = {
                 "monday": mon,

@@ -781,11 +781,17 @@ class TestAmanahBot(unittest.TestCase):
             self.assertEqual(s2, bot.STATE_PRINT_DATE)
             self.assertEqual(ctx.user_data["print_target_mode"], "all")
 
-            # Pilih pekan
+            # Pilih pekan -> langsung klik fmt_both dari STATE_PRINT_SETTINGS
             s3 = await bot.print_date_chosen(make_update(f"sel_week_{mon_str}"), ctx)
             self.assertEqual(s3, bot.STATE_PRINT_SETTINGS)
 
-            # Lanjut ke format
+            s3_direct = await bot.print_settings_action(make_update("fmt_both"), ctx)
+            self.assertEqual(s3_direct, bot.ConversationHandler.END)
+            self.assertTrue(ctx.bot.send_document.called)
+            self.assertTrue(ctx.bot.send_photo.called or ctx.bot.send_media_group.called)
+
+            # Lanjut ke format via proceed_format
+            ctx.user_data = {"print_target_mode": "all", "print_mon_str": mon_str}
             s4 = await bot.print_settings_action(make_update("proceed_format"), ctx)
             self.assertEqual(s4, bot.STATE_PRINT_FORMAT)
 
