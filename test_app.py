@@ -648,5 +648,158 @@ class TestAmanahBot(unittest.TestCase):
 
         asyncio.run(run_async_test())
 
+    def test_print_combined_all_and_active_mode(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        import bot
+
+        async def run_print_test():
+            chat_id = 991122
+            cur_name = "TEST_FIRHAN_PRINT"
+            other_name = "TEST_INDRI_PRINT"
+            database.add_name(cur_name)
+            database.add_name(other_name)
+            database.set_user_setting(chat_id, cur_name)
+
+            mon_dt = datetime.date(2026, 11, 2)
+            mon_str = "2026-11-02"
+
+            database.save_laporan({
+                "chat_id": chat_id,
+                "nama": cur_name,
+                "tanggal": "2026-11-03",
+                "hari": "SELASA",
+                "ahad_ke": 1,
+                "monday_date": mon_str,
+                "solat_malam_status": 0,
+                "solat_malam_jam": "-",
+                "solat_malam_alasan": "Terlewat",
+                "jumlah_dzikir": "-",
+                "dhuha_status": 1,
+                "dhuha_alasan": "",
+                "puasa_status": 0,
+                "puasa_alasan": "",
+                "rowatib": "3 waktu",
+                "rowatib_alasan": "Halangan"
+            })
+
+            database.save_laporan({
+                "chat_id": 999333,
+                "nama": other_name,
+                "tanggal": "2026-11-02",
+                "hari": "SENIN",
+                "ahad_ke": 1,
+                "monday_date": mon_str,
+                "solat_malam_status": 1,
+                "solat_malam_jam": "03:30 s/d 04:10",
+                "solat_malam_alasan": "",
+                "jumlah_dzikir": "10000",
+                "dhuha_status": 1,
+                "dhuha_alasan": "",
+                "puasa_status": 1,
+                "puasa_alasan": "",
+                "rowatib": "5 waktu",
+                "rowatib_alasan": ""
+            })
+
+            # 1. Verifikasi Generator Gabungan PDF & Bundle
+            all_data = [
+                database.get_laporan_week(cur_name, mon_dt),
+                database.get_laporan_week(other_name, mon_dt),
+            ]
+            week_meta = {
+                "ahad_ke": 1,
+                "bulan": all_data[0]["bulan"],
+                "posko": "TANGKIL",
+                "monday_date": mon_str
+            }
+
+            test_pdf = "test_unit_all.pdf"
+            test_prefix = "test_unit_all_img"
+            pdf_path, img_paths = pdf_generator.generate_combined_report_bundle(test_pdf, test_prefix, all_data, week_meta)
+
+            self.assertTrue(os.path.exists(pdf_path))
+            self.assertEqual(len(img_paths), 3) # 1 Rekap + 2 Detail
+
+            doc = fitz.open(pdf_path)
+            self.assertEqual(len(doc), 3)
+            rekap_text = doc[0].get_text()
+            self.assertIn("REKAPITULASI KESELURUHAN", rekap_text)
+            self.assertIn(cur_name, rekap_text)
+            self.assertIn(other_name, rekap_text)
+
+            # Halaman detail individu
+            detail1_text = doc[1].get_text()
+            self.assertIn(cur_name, detail1_text)
+            self.assertIn("SELASA: Terlewat", detail1_text)
+            self.assertIn("SELASA: Halangan", detail1_text)
+
+            detail2_text = doc[2].get_text()
+            self.assertIn(other_name, detail2_text)
+
+            doc.close()
+            os.remove(pdf_path)
+            for p in img_paths:
+                os.remove(p)
+
+            # 2. Verifikasi Handler Bot
+            def make_update(callback_data=None):
+                u = MagicMock()
+                u.effective_chat.id = chat_id
+                q = MagicMock()
+                q.data = callback_data
+                q.answer = AsyncMock()
+                q.edit_message_text = AsyncMock()
+                u.callback_query = q
+                return u
+
+            ctx = MagicMock()
+            ctx.user_data = {}
+            ctx.bot.send_message = AsyncMock()
+            ctx.bot.send_photo = AsyncMock()
+            ctx.bot.send_document = AsyncMock()
+            ctx.bot.send_media_group = AsyncMock()
+
+            # Mulai cetak -> pilih target
+            s1 = await bot.print_start(make_update("menu_print"), ctx)
+            self.assertEqual(s1, bot.STATE_PRINT_TARGET)
+
+            # Pilih target Keseluruhan
+            s2 = await bot.print_target_chosen(make_update("ptarget_all"), ctx)
+            self.assertEqual(s2, bot.STATE_PRINT_DATE)
+            self.assertEqual(ctx.user_data["print_target_mode"], "all")
+
+            # Pilih pekan
+            s3 = await bot.print_date_chosen(make_update(f"sel_week_{mon_str}"), ctx)
+            self.assertEqual(s3, bot.STATE_PRINT_SETTINGS)
+
+            # Lanjut ke format
+            s4 = await bot.print_settings_action(make_update("proceed_format"), ctx)
+            self.assertEqual(s4, bot.STATE_PRINT_FORMAT)
+
+            # Pilih format PDF
+            s5 = await bot.print_format_chosen(make_update("fmt_pdf"), ctx)
+            self.assertEqual(s5, bot.ConversationHandler.END)
+            self.assertTrue(ctx.bot.send_document.called)
+
+            # Pilih format Gambar
+            ctx.user_data = {"print_target_mode": "all", "print_mon_str": mon_str}
+            s6 = await bot.print_format_chosen(make_update("fmt_img"), ctx)
+            self.assertEqual(s6, bot.ConversationHandler.END)
+            self.assertTrue(ctx.bot.send_media_group.called or ctx.bot.send_photo.called)
+
+            # Pilih format Nama Aktif
+            ctx.user_data = {"print_target_mode": "active", "print_mon_str": mon_str}
+            s7 = await bot.print_format_chosen(make_update("fmt_both"), ctx)
+            self.assertEqual(s7, bot.ConversationHandler.END)
+
+            # Cleanup
+            database.delete_name(cur_name)
+            database.delete_name(other_name)
+            database.delete_laporan(cur_name, "2026-11-03")
+            database.delete_laporan(other_name, "2026-11-02")
+
+        asyncio.run(run_print_test())
+
 if __name__ == "__main__":
     unittest.main()

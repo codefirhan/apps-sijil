@@ -3,7 +3,7 @@ import datetime
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
@@ -37,22 +37,12 @@ for normal_path, bold_path in font_candidates:
         except Exception:
             continue
 
-def generate_pdf_report(filename: str, data: dict) -> str:
+def build_person_story(data: dict) -> list:
     """
-    Menghasilkan file PDF Laporan Pelaksanaan Amanah dengan tata letak
-    yang persis dengan template dokumen resmi.
+    Menyusun elemen flowables (story) untuk satu lembar laporan detail resmi per orang.
     """
-    doc = SimpleDocTemplate(
-        filename,
-        pagesize=landscape(A4),
-        leftMargin=36,
-        rightMargin=36,
-        topMargin=30,
-        bottomMargin=25
-    )
-
     story = []
-    
+
     # 1. Judul Laporan
     title_style = ParagraphStyle(
         'ReportTitle',
@@ -263,18 +253,227 @@ def generate_pdf_report(filename: str, data: dict) -> str:
     """
     story.append(Paragraph(keterangan_footnote, bottom_style))
 
+    return story
+
+def build_rekap_story(all_data: list, week_meta: dict) -> list:
+    """
+    Menyusun elemen flowables (story) untuk lembar Rekapitulasi Keseluruhan Anggota.
+    """
+    story = []
+
+    # 1. Judul Laporan Rekapitulasi
+    title_style = ParagraphStyle(
+        'RekapTitle',
+        fontName=FONT_NAME_BOLD,
+        fontSize=13,
+        leading=16,
+        alignment=1, # Center
+        spaceAfter=15
+    )
+    story.append(Paragraph("<b>LAPORAN PELAKSANAAN AMANAH (REKAPITULASI KESELURUHAN)</b>", title_style))
+    story.append(Spacer(1, 8))
+
+    # 2. Metadata Header: POSKO, AHAD KE, BULAN, TOTAL PELAPOR
+    header_style = ParagraphStyle(
+        'RekapMetaHeader',
+        fontName=FONT_NAME_BOLD,
+        fontSize=9.5,
+        leading=12
+    )
+
+    posko = week_meta.get("posko", "TANGKIL").upper()
+    ahad_ke = str(week_meta.get("ahad_ke", "1"))
+    bulan = week_meta.get("bulan", "")
+    total_anggota = len(all_data)
+
+    header_table_data = [
+        [
+            Paragraph(f"POSKO : {posko}", header_style),
+            Paragraph(f"AHAD KE : {ahad_ke}", header_style),
+            Paragraph(f"BULAN : {bulan}", header_style),
+            Paragraph(f"TOTAL PELAPOR : {total_anggota} ORANG", header_style),
+        ]
+    ]
+    header_table = Table(header_table_data, colWidths=[150, 130, 340, 150])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 8))
+
+    # 3. Tabel Rekapitulasi Utama
+    cell_center = ParagraphStyle(
+        'RekapCellCenter',
+        fontName=FONT_NAME,
+        fontSize=8,
+        leading=10.5,
+        alignment=1
+    )
+    cell_center_bold = ParagraphStyle(
+        'RekapCellCenterBold',
+        fontName=FONT_NAME_BOLD,
+        fontSize=8.5,
+        leading=11,
+        alignment=1
+    )
+    cell_left_bold = ParagraphStyle(
+        'RekapCellLeftBold',
+        fontName=FONT_NAME_BOLD,
+        fontSize=8.5,
+        leading=11,
+        alignment=0
+    )
+    cell_ket = ParagraphStyle(
+        'RekapCellKet',
+        fontName=FONT_NAME,
+        fontSize=7.5,
+        leading=9.5,
+        alignment=0
+    )
+
+    col_widths = [26, 95, 54, 80, 60, 65, 80, 65, 60, 185] # Total = 770 pt
+    table_rows = [
+        [
+            Paragraph("NO", cell_center_bold),
+            Paragraph("NAMA", cell_center_bold),
+            Paragraph("TERISI", cell_center_bold),
+            Paragraph("SOLAT MALAM", cell_center_bold),
+            Paragraph("DHUHA", cell_center_bold),
+            Paragraph("PUASA", cell_center_bold),
+            Paragraph("ROWATIB", cell_center_bold),
+            Paragraph("PENGAJIAN", cell_center_bold),
+            Paragraph("JIJYAH", cell_center_bold),
+            Paragraph("RINGKASAN KETERANGAN / ALASAN", cell_center_bold),
+        ]
+    ]
+
+    for idx, person in enumerate(all_data):
+        days = person.get("days", {})
+        sm_count = sum(1 for d in days.values() if d.get("solat_malam") and d.get("solat_malam") != "-")
+        dh_count = sum(1 for d in days.values() if d.get("dhuha") == "✓")
+        p_senin = days.get("SENIN", {}).get("puasa") == "✓"
+        p_kamis = days.get("KAMIS", {}).get("puasa") == "✓"
+        p_count = (1 if p_senin else 0) + (1 if p_kamis else 0)
+
+        rw_vals = [d.get("rowatib") for d in days.values() if d.get("rowatib")]
+        if not rw_vals:
+            rw_text = "-"
+        elif all(v == "5 waktu" for v in rw_vals):
+            rw_text = "5 waktu"
+        else:
+            rw_text = "Sebagian < 5"
+
+        pengajian_text = "Hadir (✓)" if person.get("pengajian_status") == 1 else "Tidak (✓)"
+        j_val = person.get("tata_krama_jijyah")
+        jijyah_text = f"Rp {j_val}" if j_val else "-"
+
+        # Ringkasan alasan/keterangan
+        k_rows = person.get("keterangan_rows", {})
+        ket_items = []
+        for k_key, k_lbl in [("solat_malam", "SM"), ("dhuha", "Dhuha"), ("puasa", "Puasa"), ("rowatib", "Rowatib")]:
+            val_str = k_rows.get(k_key, "").strip()
+            if val_str:
+                clean_str = val_str.replace("<br/>", ", ")
+                ket_items.append(f"• <b>{k_lbl}:</b> {clean_str}")
+
+        ket_text = "<br/>".join(ket_items) if ket_items else "Lengkap / Tanpa uzur"
+
+        table_rows.append([
+            Paragraph(str(idx + 1), cell_center),
+            Paragraph(person.get("nama", "-"), cell_left_bold),
+            Paragraph(f"{person.get('filled_days_count', 0)}/7 hr", cell_center),
+            Paragraph(f"{sm_count}/7 hr", cell_center),
+            Paragraph(f"{dh_count}/7 hr", cell_center),
+            Paragraph(f"{p_count}/2 hr", cell_center),
+            Paragraph(rw_text, cell_center),
+            Paragraph(pengajian_text, cell_center),
+            Paragraph(jijyah_text, cell_center),
+            Paragraph(ket_text, cell_ket),
+        ])
+
+    rekap_table = Table(table_rows, colWidths=col_widths, repeatRows=1)
+    rekap_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.75, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+    ]))
+    story.append(rekap_table)
+    story.append(Spacer(1, 14))
+
+    # Catatan Rekapitulasi
+    bottom_style = ParagraphStyle(
+        'RekapBottom',
+        fontName=FONT_NAME,
+        fontSize=8.5,
+        leading=12
+    )
+    rekap_footnote = """
+    <b>Catatan Rekapitulasi:</b><br/>
+    1. Lembar ini merangkum keterisian amanah seluruh anggota posko pada pekan bersangkutan.<br/>
+    2. Rincian lembar laporan resmi harian (Senin - Minggu) beserta alasan keterangan per ibadah untuk masing-masing anggota terlampir lengkap pada halaman-halaman berikutnya.
+    """
+    story.append(Paragraph(rekap_footnote, bottom_style))
+
+    return story
+
+def generate_pdf_report(filename: str, data: dict) -> str:
+    """
+    Menghasilkan file PDF Laporan Pelaksanaan Amanah untuk 1 orang dengan tata letak
+    persis template dokumen resmi.
+    """
+    doc = SimpleDocTemplate(
+        filename,
+        pagesize=landscape(A4),
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=30,
+        bottomMargin=25
+    )
+    story = build_person_story(data)
+    doc.build(story)
+    return filename
+
+def generate_pdf_combined_report(filename: str, all_data: list, week_meta: dict) -> str:
+    """
+    Menghasilkan file PDF Gabungan (Multi-page Landscape A4):
+    - Halaman 1: Rekapitulasi Keseluruhan Anggota Posko
+    - Halaman 2..N: Lembar Detail Resmi & Keterangan Masing-Masing Anggota
+    """
+    doc = SimpleDocTemplate(
+        filename,
+        pagesize=landscape(A4),
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=30,
+        bottomMargin=25
+    )
+    story = []
+    # 1. Halaman Rekapitulasi
+    story.extend(build_rekap_story(all_data, week_meta))
+
+    # 2. Halaman Detail Masing-Masing Orang
+    for person_data in all_data:
+        story.append(PageBreak())
+        story.extend(build_person_story(person_data))
+
     doc.build(story)
     return filename
 
 def generate_report_bundle(pdf_path: str, img_path: str, data: dict, dpi: int = 200) -> tuple:
     """
-    Menghasilkan file PDF sekaligus file Gambar (PNG) berkualitas tinggi (200 DPI).
+    Menghasilkan file PDF sekaligus file Gambar (PNG) untuk 1 orang (200 DPI).
     Mengembalikan tuple (pdf_path, img_path).
     """
-    # 1. Bangun file PDF
     generate_pdf_report(pdf_path, data)
 
-    # 2. Render halaman pertama PDF ke format Gambar PNG
     doc = fitz.open(pdf_path)
     page = doc[0]
     pix = page.get_pixmap(dpi=dpi)
@@ -282,3 +481,28 @@ def generate_report_bundle(pdf_path: str, img_path: str, data: dict, dpi: int = 
     doc.close()
 
     return pdf_path, img_path
+
+def generate_combined_report_bundle(pdf_path: str, img_prefix: str, all_data: list, week_meta: dict, dpi: int = 200) -> tuple:
+    """
+    Menghasilkan file PDF gabungan (multi-page) sekaligus file Gambar (PNG) untuk setiap halaman.
+    Mengembalikan tuple (pdf_path, list_of_img_paths).
+    """
+    generate_pdf_combined_report(pdf_path, all_data, week_meta)
+
+    img_paths = []
+    doc = fitz.open(pdf_path)
+    for i, page in enumerate(doc):
+        if i == 0:
+            name_suffix = "01_Rekapitulasi"
+        else:
+            p_idx = i - 1
+            p_name = all_data[p_idx]["nama"] if p_idx < len(all_data) else f"Anggota_{i}"
+            name_suffix = f"{i+1:02d}_Detail_{p_name}"
+
+        page_img_path = f"{img_prefix}_{name_suffix}.png"
+        pix = page.get_pixmap(dpi=dpi)
+        pix.save(page_img_path)
+        img_paths.append(page_img_path)
+    doc.close()
+
+    return pdf_path, img_paths
