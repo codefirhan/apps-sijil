@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  bot-amanah:
+    build: .
+    container_name: bot-amanah
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/app/data
+    volumes:
+      # Folder data lokal di VPS dipetakan ke /app/data agar database aman dan persisten
+      - ./data:/app/data

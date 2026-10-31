@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegram Bot Laporan Pelaksanaan Amanah
+After=network.target
+
+[Service]
+Type=simple
+# Ganti 'root' dengan username VPS Anda jika bukan root (misal: ubuntu)
+User=root
+# Sesuaikan direktori kerja dengan lokasi folder di VPS Anda
+WorkingDirectory=/root/apps-sijil
+ExecStart=/root/apps-sijil/venv/bin/python run.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

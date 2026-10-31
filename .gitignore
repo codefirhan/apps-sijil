@@ -1,0 +1,25 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment
+.env
+
+# Database
+*.db
+*.db-journal
+*.sqlite3
+
+# Temporary report outputs
+*.pdf
+*.png
+
+# Temporary deployment files
+*.tar.gz
+codefirhan@*
+
+# OS Files
+.DS_Store

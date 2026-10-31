@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+*.tar.gz
+*.png
+*.pdf
+amanah_report.db
