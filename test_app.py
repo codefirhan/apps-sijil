@@ -537,5 +537,116 @@ class TestAmanahBot(unittest.TestCase):
         self.assertTrue(database.delete_laporan(nama, tgl))
         self.assertIsNone(database.get_laporan_by_date(nama, tgl))
 
+    def test_end_to_end_edit_handlers_flow(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        import bot
+
+        async def run_async_test():
+            chat_id = 998877
+            cur_name = "TEST_E2E"
+            database.add_name(cur_name)
+            database.set_user_setting(chat_id, cur_name)
+
+            tgl = "2026-10-27"
+            database.save_laporan({
+                "chat_id": chat_id,
+                "nama": cur_name,
+                "tanggal": tgl,
+                "hari": "SELASA",
+                "ahad_ke": 1,
+                "monday_date": "2026-10-26",
+                "solat_malam_status": 1,
+                "solat_malam_jam": "03:30 s/d 04:10",
+                "solat_malam_alasan": "",
+                "jumlah_dzikir": "10000",
+                "dhuha_status": 1,
+                "dhuha_alasan": "",
+                "puasa_status": 0,
+                "puasa_alasan": "",
+                "rowatib": "5 waktu",
+                "rowatib_alasan": ""
+            })
+
+            def make_update(callback_data=None, text=None):
+                update = MagicMock()
+                update.effective_chat.id = chat_id
+                if callback_data:
+                    query = MagicMock()
+                    query.data = callback_data
+                    query.answer = AsyncMock()
+                    query.edit_message_text = AsyncMock()
+                    update.callback_query = query
+                else:
+                    update.callback_query = None
+                if text:
+                    msg = MagicMock()
+                    msg.text = text
+                    msg.reply_text = AsyncMock()
+                    update.message = msg
+                else:
+                    update.message = None
+                return update
+
+            context = MagicMock()
+            context.user_data = {}
+
+            # 1. Start menu edit
+            s1 = await bot.edit_start(make_update(callback_data="menu_edit"), context)
+            self.assertEqual(s1, bot.STATE_EDIT_SELECT_DATE)
+
+            # 2. Pilih tanggal
+            s2 = await bot.edit_date_selected(make_update(callback_data=f"editsel_{tgl}"), context)
+            self.assertEqual(s2, bot.STATE_EDIT_MENU)
+            self.assertEqual(context.user_data.get("edit_target_date"), tgl)
+
+            # 3. Edit Solat Malam
+            s3 = await bot.edit_menu_dispatcher(make_update(callback_data="edit_act_sm"), context)
+            self.assertEqual(s3, bot.STATE_EDIT_SM_STATUS)
+            s4 = await bot.edit_sm_status_chosen(make_update(callback_data="editsm_tidak"), context)
+            self.assertEqual(s4, bot.STATE_EDIT_SM_REASON)
+            s5 = await bot.edit_sm_reason_chosen(make_update(callback_data="editsmreason_Kesiangan"), context)
+            self.assertEqual(s5, bot.STATE_EDIT_MENU)
+            rec = database.get_laporan_by_date(cur_name, tgl)
+            self.assertEqual(rec["solat_malam_status"], 0)
+            self.assertEqual(rec["solat_malam_alasan"], "Kesiangan")
+
+            # 4. Edit Dhuha
+            await bot.edit_menu_dispatcher(make_update(callback_data="edit_act_dhuha"), context)
+            await bot.edit_dhuha_status_chosen(make_update(callback_data="editdh_tidak"), context)
+            await bot.edit_dhuha_reason_chosen(make_update(callback_data="editdhreason_Terlewat"), context)
+            rec = database.get_laporan_by_date(cur_name, tgl)
+            self.assertEqual(rec["dhuha_status"], 0)
+            self.assertEqual(rec["dhuha_alasan"], "Terlewat")
+
+            # 5. Edit Puasa
+            await bot.edit_menu_dispatcher(make_update(callback_data="edit_act_puasa"), context)
+            await bot.edit_puasa_status_chosen(make_update(callback_data="editp_ya"), context)
+            rec = database.get_laporan_by_date(cur_name, tgl)
+            self.assertEqual(rec["puasa_status"], 1)
+
+            # 6. Edit Rowatib
+            await bot.edit_menu_dispatcher(make_update(callback_data="edit_act_rowatib"), context)
+            await bot.edit_rowatib_chosen(make_update(callback_data="editrowatib_3 waktu"), context)
+            await bot.edit_rowatib_reason_chosen(make_update(callback_data="editrwreason_Halangan"), context)
+            rec = database.get_laporan_by_date(cur_name, tgl)
+            self.assertEqual(rec["rowatib"], "3 waktu")
+            self.assertEqual(rec["rowatib_alasan"], "Halangan")
+
+            # 7. Edit Ahad Ke
+            await bot.edit_menu_dispatcher(make_update(callback_data="edit_act_ahad"), context)
+            await bot.edit_ahad_chosen(make_update(callback_data="editahad_4"), context)
+            rec = database.get_laporan_by_date(cur_name, tgl)
+            self.assertEqual(rec["ahad_ke"], 4)
+
+            # 8. Hapus Laporan
+            await bot.edit_menu_dispatcher(make_update(callback_data="edit_act_del"), context)
+            await bot.edit_delete_confirmed(make_update(callback_data="editdel_yes"), context)
+            self.assertIsNone(database.get_laporan_by_date(cur_name, tgl))
+
+            database.delete_name(cur_name)
+
+        asyncio.run(run_async_test())
+
 if __name__ == "__main__":
     unittest.main()
