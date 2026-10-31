@@ -724,18 +724,21 @@ class TestAmanahBot(unittest.TestCase):
             doc = fitz.open(pdf_path)
             self.assertEqual(len(doc), 3)
             rekap_text = doc[0].get_text()
-            self.assertIn("REKAPITULASI KESELURUHAN", rekap_text)
+            self.assertIn("REKAPITULASI PELAKSANAAN AMANAH PER POSKO", rekap_text)
+            self.assertIn("POSKO : TANGKIL", rekap_text)
             self.assertIn(cur_name, rekap_text)
             self.assertIn(other_name, rekap_text)
 
             # Halaman detail individu
             detail1_text = doc[1].get_text()
             self.assertIn(cur_name, detail1_text)
+            self.assertIn("POSKO : TANGKIL", detail1_text)
             self.assertIn("SELASA: Terlewat", detail1_text)
             self.assertIn("SELASA: Halangan", detail1_text)
 
             detail2_text = doc[2].get_text()
             self.assertIn(other_name, detail2_text)
+            self.assertIn("POSKO : TANGKIL", detail2_text)
 
             doc.close()
             os.remove(pdf_path)
@@ -800,6 +803,117 @@ class TestAmanahBot(unittest.TestCase):
             database.delete_laporan(other_name, "2026-11-02")
 
         asyncio.run(run_print_test())
+
+    def test_laporan_cetak_perposko_complete(self):
+        """
+        Pengujian komprehensif bahwa Laporan Cetak Per Posko:
+        1. Menampilkan nama Posko ('TANGKIL' atau Posko kustom) pada Halaman Rekapitulasi Posko.
+        2. Menampilkan nama Posko pada setiap Halaman Detail Individu Anggota Posko.
+        3. Menampilkan Total Anggota Posko yang sesuai.
+        4. Merangkum seluruh anggota posko beserta detail harian dan alasan keterangan ibadah.
+        """
+        posko_test = "TANGKIL"
+        members = ["ANGGOTA_POSKO_1", "ANGGOTA_POSKO_2"]
+        for m in members:
+            database.add_name(m)
+
+        mon_str = "2026-11-09"
+        mon_dt = datetime.date(2026, 11, 9)
+
+        # Anggota 1 posko: ada uzur solat malam
+        database.save_laporan({
+            "chat_id": 112233,
+            "nama": members[0],
+            "tanggal": "2026-11-10",
+            "hari": "SELASA",
+            "ahad_ke": 2,
+            "monday_date": mon_str,
+            "solat_malam_status": 0,
+            "solat_malam_jam": "-",
+            "solat_malam_alasan": "Terlewat",
+            "jumlah_dzikir": "-",
+            "dhuha_status": 1,
+            "dhuha_alasan": "",
+            "puasa_status": 0,
+            "puasa_alasan": "",
+            "rowatib": "5 waktu",
+            "rowatib_alasan": ""
+        })
+
+        # Anggota 2 posko: ada uzur rowatib
+        database.save_laporan({
+            "chat_id": 445566,
+            "nama": members[1],
+            "tanggal": "2026-11-09",
+            "hari": "SENIN",
+            "ahad_ke": 2,
+            "monday_date": mon_str,
+            "solat_malam_status": 1,
+            "solat_malam_jam": "03:30 s/d 04:10",
+            "solat_malam_alasan": "",
+            "jumlah_dzikir": "10000",
+            "dhuha_status": 1,
+            "dhuha_alasan": "",
+            "puasa_status": 1,
+            "puasa_alasan": "",
+            "rowatib": "4 waktu",
+            "rowatib_alasan": "Ada Keperluan"
+        })
+
+        all_data = [database.get_laporan_week(m, mon_dt) for m in members]
+        week_meta = {
+            "ahad_ke": 2,
+            "bulan": all_data[0]["bulan"],
+            "posko": posko_test,
+            "monday_date": mon_str
+        }
+
+        test_pdf = "test_laporan_perposko.pdf"
+        test_prefix = "test_laporan_perposko_img"
+        pdf_path, img_paths = pdf_generator.generate_combined_report_bundle(
+            test_pdf, test_prefix, all_data, week_meta
+        )
+
+        self.assertTrue(os.path.exists(pdf_path))
+        self.assertEqual(len(img_paths), 1 + len(members)) # 1 Rekap Posko + 2 Detail Anggota
+
+        doc = fitz.open(pdf_path)
+        self.assertEqual(len(doc), 3)
+
+        # 1. Halaman 1: Rekapitulasi Posko
+        rekap_page = doc[0].get_text()
+        self.assertIn("LAPORAN REKAPITULASI PELAKSANAAN AMANAH PER POSKO", rekap_page)
+        self.assertIn(f"POSKO : {posko_test}", rekap_page)
+        self.assertIn("TOTAL ANGGOTA : 2 ORANG", rekap_page)
+        self.assertIn("ANGGOTA_POSKO_1", rekap_page)
+        self.assertIn("ANGGOTA_POSKO_2", rekap_page)
+        self.assertIn("Catatan Rekapitulasi:", rekap_page)
+
+        # 2. Halaman 2: Detail Anggota Posko 1
+        detail1_page = doc[1].get_text()
+        self.assertIn("LAPORAN PELAKSANAAN AMANAH", detail1_page)
+        self.assertIn("NAMA : ANGGOTA_POSKO_1", detail1_page)
+        self.assertIn(f"POSKO : {posko_test}", detail1_page)
+        self.assertIn("SELASA: Terlewat", detail1_page)
+
+        # 3. Halaman 3: Detail Anggota Posko 2
+        detail2_page = doc[2].get_text()
+        self.assertIn("LAPORAN PELAKSANAAN AMANAH", detail2_page)
+        self.assertIn("NAMA : ANGGOTA_POSKO_2", detail2_page)
+        self.assertIn(f"POSKO : {posko_test}", detail2_page)
+        self.assertIn("SENIN: Ada Keperluan", detail2_page)
+
+        doc.close()
+
+        # Cleanup
+        os.remove(pdf_path)
+        for p in img_paths:
+            os.remove(p)
+
+        for m in members:
+            database.delete_name(m)
+        database.delete_laporan(members[0], "2026-11-10")
+        database.delete_laporan(members[1], "2026-11-09")
 
 if __name__ == "__main__":
     unittest.main()

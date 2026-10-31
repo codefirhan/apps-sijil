@@ -506,7 +506,7 @@ def get_laporan_week(nama: str, monday_date: datetime.date) -> Dict[str, Any]:
         "nama": nama_clean,
         "ahad_ke": final_ahad_ke,
         "bulan": bulan_str,
-        "posko": "TANGKIL",
+        "posko": os.getenv("POSKO_NAME", "TANGKIL"),
         "monday_date": start_str,
         "sunday_date": end_str,
         "filled_days_count": len(db_by_day),

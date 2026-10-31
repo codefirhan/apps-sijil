@@ -26,6 +26,8 @@ import pdf_generator
 
 load_dotenv()
 
+POSKO_NAME = os.getenv("POSKO_NAME", "TANGKIL").upper()
+
 # Konfigurasi Logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -2358,12 +2360,12 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
         week_meta = {
             "ahad_ke": all_data[0]["ahad_ke"],
             "bulan": all_data[0]["bulan"],
-            "posko": "TANGKIL",
+            "posko": POSKO_NAME,
             "monday_date": all_data[0]["monday_date"],
             "sunday_date": all_data[0]["sunday_date"]
         }
 
-        base_name = f"Laporan_Amanah_Keseluruhan_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}_{timestamp}"
+        base_name = f"Laporan_Amanah_Posko_{POSKO_NAME}_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}_{timestamp}"
         pdf_filename = f"{base_name}.pdf"
         pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), pdf_filename)
         img_prefix = os.path.join(os.path.dirname(os.path.abspath(__file__)), base_name)
@@ -2372,13 +2374,13 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
             pdf_path, img_paths = pdf_generator.generate_combined_report_bundle(pdf_path, img_prefix, all_data, week_meta)
 
             caption_text = (
-                "📄 *LAPORAN PELAKSANAAN AMANAH (KESELURUHAN)*\n"
+                "📄 *LAPORAN PELAKSANAAN AMANAH PER POSKO*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🏢 *Posko:* `TANGKIL` (Statis)\n"
+                f"🏢 *Posko:* `{POSKO_NAME}`\n"
                 f"🗓 *Ahad Ke:* `{week_meta['ahad_ke']}`\n"
                 f"📅 *Pekan:* `{week_meta['bulan']}`\n"
                 f"👥 *Total Anggota:* {len(all_names)} Orang\n"
-                "📋 *Isi:* Lembar Rekapitulasi + Lembar Detail & Keterangan Lengkap Tiap Anggota"
+                "📋 *Isi:* Lembar Rekapitulasi Posko + Lembar Detail & Keterangan Lengkap Tiap Anggota"
             )
 
             if fmt in ["img", "both"]:
@@ -2389,10 +2391,10 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
                         f = open(p, "rb")
                         opened_files.append(f)
                         if idx == 0:
-                            cap = caption_text + "\n*(Halaman 1: Rekapitulasi Keseluruhan)*"
+                            cap = caption_text + f"\n*(Halaman 1: Rekapitulasi Posko {POSKO_NAME})*"
                         else:
                             p_name = all_data[idx - 1]["nama"]
-                            cap = f"👤 *Lembar Detail:* `{p_name}`"
+                            cap = f"👤 *Lembar Detail:* `{p_name}` (Posko {POSKO_NAME})"
                         media.append(InputMediaPhoto(media=f, caption=cap, parse_mode="Markdown"))
                     try:
                         await context.bot.send_media_group(chat_id=chat_id, media=media)
@@ -2403,10 +2405,10 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
                     for idx, p in enumerate(img_paths):
                         with open(p, "rb") as photo_file:
                             if idx == 0:
-                                cap = caption_text + "\n*(Halaman 1: Rekapitulasi Keseluruhan)*"
+                                cap = caption_text + f"\n*(Halaman 1: Rekapitulasi Posko {POSKO_NAME})*"
                             else:
                                 p_name = all_data[idx - 1]["nama"]
-                                cap = f"👤 *Lembar Detail:* `{p_name}`"
+                                cap = f"👤 *Lembar Detail:* `{p_name}` (Posko {POSKO_NAME})"
                             await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=cap, parse_mode="Markdown")
 
             if fmt in ["pdf", "both"]:
@@ -2414,8 +2416,8 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
                     await context.bot.send_document(
                         chat_id=chat_id,
                         document=doc_file,
-                        filename=f"Laporan_Amanah_Keseluruhan_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}.pdf",
-                        caption=caption_text if fmt == "pdf" else "📄 *File Dokumen PDF Lengkap Gabungan*",
+                        filename=f"Laporan_Amanah_Posko_{POSKO_NAME}_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}.pdf",
+                        caption=caption_text if fmt == "pdf" else f"📄 *Dokumen PDF Resmi Posko {POSKO_NAME} (Rekap & Detail Anggota)*",
                         parse_mode="Markdown"
                     )
 

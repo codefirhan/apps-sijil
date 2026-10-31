@@ -66,7 +66,7 @@ def build_person_story(data: dict) -> list:
     nama = data.get("nama", "FIRHAN").upper()
     ahad_ke = str(data.get("ahad_ke", "2"))
     bulan = data.get("bulan", "")
-    posko = data.get("posko", "TANGKIL").upper()
+    posko = str(data.get("posko") or os.getenv("POSKO_NAME", "TANGKIL")).upper()
 
     header_table_data = [
         [
@@ -270,10 +270,10 @@ def build_rekap_story(all_data: list, week_meta: dict) -> list:
         alignment=1, # Center
         spaceAfter=15
     )
-    story.append(Paragraph("<b>LAPORAN PELAKSANAAN AMANAH (REKAPITULASI KESELURUHAN)</b>", title_style))
+    story.append(Paragraph("<b>LAPORAN REKAPITULASI PELAKSANAAN AMANAH PER POSKO</b>", title_style))
     story.append(Spacer(1, 8))
 
-    # 2. Metadata Header: POSKO, AHAD KE, BULAN, TOTAL PELAPOR
+    # 2. Metadata Header: POSKO, AHAD KE, BULAN, TOTAL ANGGOTA
     header_style = ParagraphStyle(
         'RekapMetaHeader',
         fontName=FONT_NAME_BOLD,
@@ -281,7 +281,7 @@ def build_rekap_story(all_data: list, week_meta: dict) -> list:
         leading=12
     )
 
-    posko = week_meta.get("posko", "TANGKIL").upper()
+    posko = str(week_meta.get("posko") or os.getenv("POSKO_NAME", "TANGKIL")).upper()
     ahad_ke = str(week_meta.get("ahad_ke", "1"))
     bulan = week_meta.get("bulan", "")
     total_anggota = len(all_data)
@@ -291,7 +291,7 @@ def build_rekap_story(all_data: list, week_meta: dict) -> list:
             Paragraph(f"POSKO : {posko}", header_style),
             Paragraph(f"AHAD KE : {ahad_ke}", header_style),
             Paragraph(f"BULAN : {bulan}", header_style),
-            Paragraph(f"TOTAL PELAPOR : {total_anggota} ORANG", header_style),
+            Paragraph(f"TOTAL ANGGOTA : {total_anggota} ORANG", header_style),
         ]
     ]
     header_table = Table(header_table_data, colWidths=[150, 130, 340, 150])
