@@ -1296,6 +1296,9 @@ async def edit_menu_dispatcher(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
         return ConversationHandler.END
 
+    if data in ("edit_dashboard_back", "edit_back_dashboard"):
+        return await render_edit_dashboard(update, context, tgl_str)
+
     if data == "edit_back_select":
         return await edit_start(update, context)
 
@@ -1521,7 +1524,8 @@ async def edit_sm_time_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if data == "editsmtime_manual":
         text = "🕒 Silakan ketik jam pelaksanaan Solat Malam (contoh: `03:30 s/d 04:10`):"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_SM_TIME
 
     time_val = data.replace("editsmtime_", "")
@@ -1569,7 +1573,8 @@ async def edit_dzikir_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data == "editdzikir_manual":
         text = "📿 Silakan ketik jumlah dzikir (contoh: `10000` atau `20.000`):"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_DZIKIR
 
     dzikir_val = data.replace("editdzikir_", "")
@@ -1615,7 +1620,8 @@ async def edit_sm_reason_chosen(update: Update, context: ContextTypes.DEFAULT_TY
 
     if data == "editsmreason_manual":
         text = "✏️ Silakan ketik alasan tidak melaksanakan Solat Malam:"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_SM_REASON
 
     reason_val = data.replace("editsmreason_", "")
@@ -1697,7 +1703,8 @@ async def edit_dhuha_reason_chosen(update: Update, context: ContextTypes.DEFAULT
 
     if data == "editdhreason_manual":
         text = "✏️ Silakan ketik alasan tidak melaksanakan Solat Dhuha:"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_DHUHA_REASON
 
     reason_val = data.replace("editdhreason_", "")
@@ -1780,7 +1787,8 @@ async def edit_puasa_reason_chosen(update: Update, context: ContextTypes.DEFAULT
 
     if data == "editpreason_manual":
         text = "✏️ Silakan ketik alasan tidak berpuasa:"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_PUASA_REASON
 
     reason_val = data.replace("editpreason_", "")
@@ -1864,7 +1872,8 @@ async def edit_rowatib_reason_chosen(update: Update, context: ContextTypes.DEFAU
 
     if data == "editrwreason_manual":
         text = "✏️ Silakan ketik alasan tidak full Solat Rowatib:"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_ROWATIB_REASON
 
     reason_val = data.replace("editrwreason_", "")
@@ -1909,7 +1918,7 @@ async def edit_ahad_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mon_str = mon.strftime("%Y-%m-%d")
     database.save_pekan_ahad_ke(cur_name, mon_str, ahad_val)
 
-    return await render_edit_dashboard(update, context, tgl_str, prefix_msg=f"✅ *Ahad Ke berhasil diperbarui menjadi Ahad ke-{ahad_val}!*\\n\\n")
+    return await render_edit_dashboard(update, context, tgl_str, prefix_msg=f"✅ *Ahad Ke berhasil diperbarui menjadi Ahad ke-{ahad_val}!*\n\n")
 
 # --- Handlers Edit Jijyah ---
 
@@ -1926,7 +1935,8 @@ async def edit_jijyah_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data == "editjset_manual":
         text = "✏️ Silakan ketik nominal untuk Jijyah (contoh: `2000`, `67000`, `50000`):"
-        await query.edit_message_text(text=text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 Batal", callback_data="edit_dashboard_back")]]
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return STATE_EDIT_JIJYAH_MANUAL
 
     tgl_dt = datetime.datetime.strptime(tgl_str, "%Y-%m-%d").date()
@@ -2452,7 +2462,7 @@ def main():
         ],
         states={
             STATE_EDIT_SELECT_DATE: [
-                CallbackQueryHandler(edit_date_selected, pattern="^(editsel_|edit_date_custom|menu_main)$"),
+                CallbackQueryHandler(edit_date_selected, pattern="^(editsel_|edit_date_custom|menu_main)"),
             ],
             STATE_EDIT_MANUAL_DATE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_manual_date_received),
@@ -2460,56 +2470,56 @@ def main():
                 CallbackQueryHandler(start_command, pattern="^menu_main$"),
             ],
             STATE_EDIT_MENU: [
-                CallbackQueryHandler(edit_menu_dispatcher, pattern="^(edit_act_|edit_back_select|menu_main)$"),
+                CallbackQueryHandler(edit_menu_dispatcher, pattern="^(edit_act_|edit_back_select|menu_main)"),
             ],
             STATE_EDIT_SM_STATUS: [
-                CallbackQueryHandler(edit_sm_status_chosen, pattern="^(editsm_ya|editsm_tidak|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_sm_status_chosen, pattern="^(editsm_ya|editsm_tidak|edit_dashboard_back)"),
             ],
             STATE_EDIT_SM_TIME: [
-                CallbackQueryHandler(edit_sm_time_chosen, pattern="^(editsmtime_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_sm_time_chosen, pattern="^(editsmtime_|edit_dashboard_back)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_sm_time_text),
             ],
             STATE_EDIT_SM_REASON: [
-                CallbackQueryHandler(edit_sm_reason_chosen, pattern="^(editsmreason_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_sm_reason_chosen, pattern="^(editsmreason_|edit_dashboard_back)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_sm_reason_text),
             ],
             STATE_EDIT_DZIKIR: [
-                CallbackQueryHandler(edit_dzikir_chosen, pattern="^(editdzikir_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_dzikir_chosen, pattern="^(editdzikir_|edit_dashboard_back)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_dzikir_text),
             ],
             STATE_EDIT_DHUHA_STATUS: [
-                CallbackQueryHandler(edit_dhuha_status_chosen, pattern="^(editdh_ya|editdh_tidak|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_dhuha_status_chosen, pattern="^(editdh_ya|editdh_tidak|edit_dashboard_back)"),
             ],
             STATE_EDIT_DHUHA_REASON: [
-                CallbackQueryHandler(edit_dhuha_reason_chosen, pattern="^(editdhreason_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_dhuha_reason_chosen, pattern="^(editdhreason_|edit_dashboard_back)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_dhuha_reason_text),
             ],
             STATE_EDIT_PUASA_STATUS: [
-                CallbackQueryHandler(edit_puasa_status_chosen, pattern="^(editp_ya|editp_tidak|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_puasa_status_chosen, pattern="^(editp_ya|editp_tidak|edit_dashboard_back)"),
             ],
             STATE_EDIT_PUASA_REASON: [
-                CallbackQueryHandler(edit_puasa_reason_chosen, pattern="^(editpreason_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_puasa_reason_chosen, pattern="^(editpreason_|edit_dashboard_back)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_puasa_reason_text),
             ],
             STATE_EDIT_ROWATIB: [
-                CallbackQueryHandler(edit_rowatib_chosen, pattern="^(editrowatib_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_rowatib_chosen, pattern="^(editrowatib_|edit_dashboard_back)"),
             ],
             STATE_EDIT_ROWATIB_REASON: [
-                CallbackQueryHandler(edit_rowatib_reason_chosen, pattern="^(editrwreason_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_rowatib_reason_chosen, pattern="^(editrwreason_|edit_dashboard_back)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_rowatib_reason_text),
             ],
             STATE_EDIT_AHAD_KE: [
-                CallbackQueryHandler(edit_ahad_chosen, pattern="^(editahad_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_ahad_chosen, pattern="^(editahad_|edit_dashboard_back)"),
             ],
             STATE_EDIT_JIJYAH: [
-                CallbackQueryHandler(edit_jijyah_chosen, pattern="^(editjset_|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_jijyah_chosen, pattern="^(editjset_|edit_dashboard_back)"),
             ],
             STATE_EDIT_JIJYAH_MANUAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, edit_jijyah_manual_received),
                 CallbackQueryHandler(edit_menu_dispatcher, pattern="^edit_dashboard_back$"),
             ],
             STATE_EDIT_DELETE_CONFIRM: [
-                CallbackQueryHandler(edit_delete_confirmed, pattern="^(editdel_yes|edit_dashboard_back)$"),
+                CallbackQueryHandler(edit_delete_confirmed, pattern="^(editdel_yes|edit_dashboard_back)"),
             ],
         },
         fallbacks=[

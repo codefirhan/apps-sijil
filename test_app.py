@@ -420,5 +420,122 @@ class TestAmanahBot(unittest.TestCase):
         doc.close()
         os.remove(test_pdf)
 
+    def test_edit_callback_patterns_and_operations(self):
+        import re
+
+        # Verifikasi pattern regex pada ConversationHandler edit
+        patterns = {
+            "STATE_EDIT_SELECT_DATE": r"^(editsel_|edit_date_custom|menu_main)",
+            "STATE_EDIT_MENU": r"^(edit_act_|edit_back_select|menu_main)",
+            "STATE_EDIT_SM_TIME": r"^(editsmtime_|edit_dashboard_back)",
+            "STATE_EDIT_SM_REASON": r"^(editsmreason_|edit_dashboard_back)",
+            "STATE_EDIT_DZIKIR": r"^(editdzikir_|edit_dashboard_back)",
+            "STATE_EDIT_DHUHA_REASON": r"^(editdhreason_|edit_dashboard_back)",
+            "STATE_EDIT_PUASA_REASON": r"^(editpreason_|edit_dashboard_back)",
+            "STATE_EDIT_ROWATIB": r"^(editrowatib_|edit_dashboard_back)",
+            "STATE_EDIT_ROWATIB_REASON": r"^(editrwreason_|edit_dashboard_back)",
+            "STATE_EDIT_AHAD_KE": r"^(editahad_|edit_dashboard_back)",
+            "STATE_EDIT_JIJYAH": r"^(editjset_|edit_dashboard_back)",
+        }
+
+        # Contoh callback data aktual dari inline button
+        samples = [
+            ("STATE_EDIT_SELECT_DATE", "editsel_2026-10-27"),
+            ("STATE_EDIT_SELECT_DATE", "edit_date_custom"),
+            ("STATE_EDIT_SELECT_DATE", "menu_main"),
+            ("STATE_EDIT_MENU", "edit_act_sm"),
+            ("STATE_EDIT_MENU", "edit_act_dhuha"),
+            ("STATE_EDIT_MENU", "edit_act_puasa"),
+            ("STATE_EDIT_MENU", "edit_act_rowatib"),
+            ("STATE_EDIT_MENU", "edit_act_ahad"),
+            ("STATE_EDIT_MENU", "edit_act_pengajian"),
+            ("STATE_EDIT_MENU", "edit_act_jijyah"),
+            ("STATE_EDIT_MENU", "edit_act_del"),
+            ("STATE_EDIT_MENU", "edit_back_select"),
+            ("STATE_EDIT_MENU", "menu_main"),
+            ("STATE_EDIT_SM_TIME", "editsmtime_03:30 s/d 04:10"),
+            ("STATE_EDIT_SM_TIME", "editsmtime_manual"),
+            ("STATE_EDIT_SM_TIME", "edit_dashboard_back"),
+            ("STATE_EDIT_SM_REASON", "editsmreason_Terlewat"),
+            ("STATE_EDIT_SM_REASON", "editsmreason_Halangan"),
+            ("STATE_EDIT_SM_REASON", "edit_dashboard_back"),
+            ("STATE_EDIT_DZIKIR", "editdzikir_10000"),
+            ("STATE_EDIT_DZIKIR", "editdzikir_20000"),
+            ("STATE_EDIT_DZIKIR", "editdzikir_manual"),
+            ("STATE_EDIT_DZIKIR", "edit_dashboard_back"),
+            ("STATE_EDIT_DHUHA_REASON", "editdhreason_Terlewat"),
+            ("STATE_EDIT_DHUHA_REASON", "editdhreason_Halangan"),
+            ("STATE_EDIT_DHUHA_REASON", "edit_dashboard_back"),
+            ("STATE_EDIT_PUASA_REASON", "editpreason_Halangan"),
+            ("STATE_EDIT_PUASA_REASON", "editpreason_Terlewat"),
+            ("STATE_EDIT_PUASA_REASON", "edit_dashboard_back"),
+            ("STATE_EDIT_ROWATIB", "editrowatib_5 waktu"),
+            ("STATE_EDIT_ROWATIB", "editrowatib_3 waktu"),
+            ("STATE_EDIT_ROWATIB", "edit_dashboard_back"),
+            ("STATE_EDIT_ROWATIB_REASON", "editrwreason_Halangan"),
+            ("STATE_EDIT_ROWATIB_REASON", "editrwreason_Terlewat"),
+            ("STATE_EDIT_ROWATIB_REASON", "edit_dashboard_back"),
+            ("STATE_EDIT_AHAD_KE", "editahad_1"),
+            ("STATE_EDIT_AHAD_KE", "editahad_4"),
+            ("STATE_EDIT_AHAD_KE", "edit_dashboard_back"),
+            ("STATE_EDIT_JIJYAH", "editjset_2000"),
+            ("STATE_EDIT_JIJYAH", "editjset_67000"),
+            ("STATE_EDIT_JIJYAH", "editjset_manual"),
+            ("STATE_EDIT_JIJYAH", "edit_dashboard_back"),
+        ]
+
+        for state_name, callback_data in samples:
+            pattern = patterns[state_name]
+            self.assertTrue(
+                bool(re.match(pattern, callback_data)),
+                f"Pattern {pattern} pada state {state_name} harus mencocokkan '{callback_data}'!"
+            )
+
+        # Verifikasi operasi edit data di database
+        nama = "FIRHAN"
+        tgl = "2026-10-27"
+        database.save_laporan({
+            "chat_id": 99999,
+            "nama": nama,
+            "tanggal": tgl,
+            "hari": "SELASA",
+            "ahad_ke": 1,
+            "monday_date": "2026-10-26",
+            "solat_malam_status": 1,
+            "solat_malam_jam": "03:30 s/d 04:10",
+            "solat_malam_alasan": "",
+            "jumlah_dzikir": "10000",
+            "dhuha_status": 1,
+            "dhuha_alasan": "",
+            "puasa_status": 0,
+            "puasa_alasan": "",
+            "rowatib": "5 waktu",
+            "rowatib_alasan": ""
+        })
+
+        # Update Solat Malam via edit
+        database.update_laporan(nama, tgl, {
+            "solat_malam_status": 0,
+            "solat_malam_jam": "-",
+            "solat_malam_alasan": "Terlewat",
+            "jumlah_dzikir": "-"
+        })
+        rec = database.get_laporan_by_date(nama, tgl)
+        self.assertEqual(rec["solat_malam_status"], 0)
+        self.assertEqual(rec["solat_malam_alasan"], "Terlewat")
+
+        # Update Rowatib via edit
+        database.update_laporan(nama, tgl, {
+            "rowatib": "3 waktu",
+            "rowatib_alasan": "Halangan"
+        })
+        rec = database.get_laporan_by_date(nama, tgl)
+        self.assertEqual(rec["rowatib"], "3 waktu")
+        self.assertEqual(rec["rowatib_alasan"], "Halangan")
+
+        # Hapus via edit delete
+        self.assertTrue(database.delete_laporan(nama, tgl))
+        self.assertIsNone(database.get_laporan_by_date(nama, tgl))
+
 if __name__ == "__main__":
     unittest.main()
