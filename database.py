@@ -472,18 +472,26 @@ def get_laporan_week(nama: str, monday_date: datetime.date) -> Dict[str, Any]:
 
             days_result[day_name] = {
                 "solat_malam": sm_val,
+                "solat_malam_alasan": rec.get("solat_malam_alasan", ""),
                 "jumlah_dzikir": dzikir_val,
                 "dhuha": dhuha_val,
+                "dhuha_alasan": rec.get("dhuha_alasan", ""),
                 "puasa": puasa_val,
-                "rowatib": rowatib_val
+                "puasa_alasan": rec.get("puasa_alasan", ""),
+                "rowatib": rowatib_val,
+                "rowatib_alasan": rec.get("rowatib_alasan", "")
             }
         else:
             days_result[day_name] = {
                 "solat_malam": "",
+                "solat_malam_alasan": "",
                 "jumlah_dzikir": "",
                 "dhuha": "",
+                "dhuha_alasan": "",
                 "puasa": "",
-                "rowatib": ""
+                "puasa_alasan": "",
+                "rowatib": "",
+                "rowatib_alasan": ""
             }
 
     keterangan_rows = {

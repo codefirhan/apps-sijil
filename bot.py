@@ -81,6 +81,92 @@ logger = logging.getLogger(__name__)
     STATE_EDIT_DELETE_CONFIRM,
 ) = range(42)
 
+def format_detailed_person_report_text(report: dict) -> str:
+    """
+    Menyusun rincian laporan mingguan per orang secara lengkap dan detail (Senin s/d Minggu)
+    beserta jam Solat Malam, Jumlah Dzikir, Solat Dhuha, Puasa Senin & Kamis, Solat Rowatib,
+    Keterangan Alasan, Pengajian, Piket, dan Tata Krama (Jijyah) tanpa disingkat.
+    """
+    pengajian_status_str = "Hadir (✓)" if report["pengajian_status"] == 1 else "Tidak (✓)"
+    jijyah_val = f"Rp {report['tata_krama_jijyah']}" if report.get("tata_krama_jijyah") else "-"
+    ahad_nominal = f"Rp {report['tata_krama_ahad']}" if report.get("tata_krama_ahad") else "-"
+
+    lines = [
+        f"👤 *NAMA PELAPOR:* `{report['nama']}`",
+        f"🗓 *Ahad Ke:* `{report['ahad_ke']}` | *Pekan:* `{report['bulan']}` | *Posko:* `{report.get('posko', 'TANGKIL')}`",
+        f"📊 *Keterisian:* {report['filled_days_count']} dari 7 hari",
+    ]
+    days = ["SENIN", "SELASA", "RABU", "KAMIS", "JUM'AT", "SABTU", "MINGGU"]
+    for d in days:
+        d_data = report["days"][d]
+        if d_data["solat_malam"] != "":
+            if d_data["solat_malam"] != "-":
+                sm_str = f"Jam {d_data['solat_malam']}"
+                dz_str = f"{d_data['jumlah_dzikir']}"
+            else:
+                alasan_sm = d_data.get("solat_malam_alasan") or "Terlewat"
+                sm_str = f"Tidak melaksanakan (Alasan: {alasan_sm})"
+                dz_str = "-"
+
+            if d_data["dhuha"] == "✓":
+                dh_str = "Ya (✓)"
+            else:
+                alasan_dh = d_data.get("dhuha_alasan") or "Terlewat"
+                dh_str = f"Tidak melaksanakan (Alasan: {alasan_dh})"
+
+            if d_data["puasa"] == "✓":
+                p_str = "Ya (✓)"
+            elif d in ["SENIN", "KAMIS"]:
+                alasan_p = d_data.get("puasa_alasan") or "Tidak Puasa"
+                p_str = f"Tidak melaksanakan (Alasan: {alasan_p})"
+            else:
+                p_str = "-"
+
+            rw_val = d_data["rowatib"] or "5 waktu"
+            if rw_val != "5 waktu" and d_data.get("rowatib_alasan"):
+                rw_str = f"{rw_val} (Alasan: {d_data['rowatib_alasan']})"
+            elif d_data.get("rowatib_alasan"):
+                rw_str = f"{rw_val} (Catatan: {d_data['rowatib_alasan']})"
+            else:
+                rw_str = f"{rw_val}"
+
+            lines.append(
+                f"✅ *{d}:*\n"
+                f"   • Solat Malam: `{sm_str}`\n"
+                f"   • Jumlah Dzikir: `{dz_str}`\n"
+                f"   • Solat Dhuha: `{dh_str}`\n"
+                f"   • Puasa Senin & Kamis: `{p_str}`\n"
+                f"   • Solat Rowatib: `{rw_str}`"
+            )
+        else:
+            lines.append(f"⚪ *{d}:* _Belum diisi_")
+
+    ket_rows = report.get("keterangan_rows", {})
+    ket_lines = []
+    for k_key, k_label in [
+        ("solat_malam", "Solat Malam"),
+        ("dhuha", "Solat Dhuha"),
+        ("puasa", "Puasa Senin & Kamis"),
+        ("rowatib", "Solat Rowatib")
+    ]:
+        val_str = ket_rows.get(k_key, "").strip()
+        if val_str:
+            clean_str = val_str.replace("<br/>", "; ")
+            ket_lines.append(f"   • {k_label}: {clean_str}")
+
+    if ket_lines:
+        lines.append("📝 *Keterangan / Alasan:*\n" + "\n".join(ket_lines))
+    else:
+        lines.append("📝 *Keterangan / Alasan:* `Lengkap / Tanpa uzur`")
+
+    lines.append(
+        f"🕌 *Pengajian:* {pengajian_status_str}\n"
+        f"🧹 *Piket:* Tidak (✓) [Statis]\n"
+        f"💰 *Tata Krama:* Ahad: `{ahad_nominal}` | Jijyah: `{jijyah_val}`"
+    )
+    return "\n".join(lines)
+
+
 def build_main_menu(chat_id: int):
     selected_name = database.get_user_setting(chat_id)
     text = (
@@ -173,39 +259,36 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return ConversationHandler.END
 
-    elif data == "menu_recap":
+    elif data in ("menu_recap", "menu_recap_all"):
         cur_name = database.get_user_setting(chat_id)
         today = datetime.date.today()
         mon, sun, calc_ahad, b_str = database.calculate_week_info(today)
-        report = database.get_laporan_week(cur_name, mon)
 
-        pengajian_status_str = "Hadir (✓)" if report["pengajian_status"] == 1 else "Tidak (✓)"
-        jijyah_val = report["tata_krama_jijyah"] or "-"
+        if data == "menu_recap_all":
+            all_names = database.get_all_names()
+            all_reports = [database.get_laporan_week(n, mon) for n in all_names]
+            details_blocks = [format_detailed_person_report_text(r) for r in all_reports]
+            text = (
+                f"📊 *LAPORAN DETAIL KESELURUHAN POSKO PEKAN INI*\n"
+                f"🏢 *Posko:* `TANGKIL` | 👥 *Total Anggota:* {len(all_names)} Orang\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                + "\n━━━━━━━━━━━━━━━━━━━━━━\n".join(details_blocks)
+            )
+            toggle_btn = InlineKeyboardButton(f"👤 Lihat Pelapor Aktif Saja ({cur_name})", callback_data="menu_recap")
+        else:
+            report = database.get_laporan_week(cur_name, mon)
+            text = (
+                f"📊 *LAPORAN DETAIL PEKAN INI*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                + format_detailed_person_report_text(report)
+            )
+            toggle_btn = InlineKeyboardButton("👥 Lihat Keseluruhan Anggota Posko", callback_data="menu_recap_all")
 
-        text = (
-            f"📊 *REKAP PEKAN INI*\n"
-            f"👤 Pelapor: `{cur_name}`\n"
-            f"📅 Pekan: `{b_str}` (Ahad ke-{report['ahad_ke']})\n"
-            f"🏢 Posko: `TANGKIL` (Statis)\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        )
-        days = ["SENIN", "SELASA", "RABU", "KAMIS", "JUM'AT", "SABTU", "MINGGU"]
-        for d in days:
-            d_data = report["days"][d]
-            if d_data["solat_malam"] != "":
-                text += f"✅ *{d}:* SM: {d_data['solat_malam']}, Dz: {d_data['jumlah_dzikir']}, Dh: {d_data['dhuha']}, P: {d_data['puasa'] or '-'}, Rw: {d_data['rowatib']}\n"
-            else:
-                text += f"⚪ *{d}:* _Belum diisi_\n"
-
-        text += (
-            f"\nTotal terisi: *{report['filled_days_count']} / 7 hari*\n"
-            f"🗓 *Ahad Ke:* {report['ahad_ke']}\n"
-            f"🕌 *Pengajian:* {pengajian_status_str}\n"
-            f"🧹 *Piket:* Tidak (✓) [Statis]\n"
-            f"💰 *Jijyah (Tata Krama):* {jijyah_val}\n"
-        )
+        if len(text) > 4000:
+            text = text[:3950] + "\n\n_...(Rincian lengkap dapat diunduh melalui menu Cetak Laporan)_"
 
         keyboard = [
+            [toggle_btn],
             [InlineKeyboardButton("📄 Cetak Laporan Pekan Ini", callback_data=f"quick_print_{mon.strftime('%Y-%m-%d')}")],
             [InlineKeyboardButton("✏️ Edit Data Inputan", callback_data="menu_edit")],
             [InlineKeyboardButton("📝 Input Laporan", callback_data="menu_input")],
@@ -1013,7 +1096,13 @@ async def tatakrama_manual_received(update: Update, context: ContextTypes.DEFAUL
 async def show_input_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     form = context.user_data["input_form"]
 
-    sm_summary = f"Ya ({form.get('solat_malam_jam', '-')}, Dzikir: {form.get('jumlah_dzikir', '-')})" if form.get("solat_malam_status") == 1 else f"Tidak (Alasan: {form.get('solat_malam_alasan', '-')})"
+    if form.get("solat_malam_status") == 1:
+        sm_summary = f"Ya (Jam: {form.get('solat_malam_jam', '-')})"
+        dz_summary = f"{form.get('jumlah_dzikir', '-')}"
+    else:
+        sm_summary = f"Tidak (Alasan: {form.get('solat_malam_alasan', '-')})"
+        dz_summary = "-"
+
     dh_summary = "Ya (✓)" if form.get("dhuha_status") == 1 else f"Tidak (Alasan: {form.get('dhuha_alasan', '-')})"
     p_summary = "Ya (✓)" if form.get("puasa_status") == 1 else (f"Tidak (Alasan: {form.get('puasa_alasan', '-')})" if form.get("puasa_alasan") else "Tidak")
     rw_alasan_str = f" (Alasan: {form['rowatib_alasan']})" if form.get("rowatib") != "5 waktu" and form.get("rowatib_alasan") else ""
@@ -1037,8 +1126,9 @@ async def show_input_summary(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"🏢 *Posko:* `TANGKIL` (Statis)\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🌙 *Solat Malam:* {sm_summary}\n"
+        f"📿 *Jumlah Dzikir:* `{dz_summary}`\n"
         f"☀️ *Solat Dhuha:* {dh_summary}\n"
-        f"🍃 *Puasa:* {p_summary}\n"
+        f"🍃 *Puasa Senin & Kamis:* {p_summary}\n"
         f"🕌 *Solat Rowatib:* `{form['rowatib']}`{rw_alasan_str}\n"
         f"{extra_minggu_text}"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1217,7 +1307,13 @@ async def render_edit_dashboard(update: Update, context: ContextTypes.DEFAULT_TY
     mon_str = mon.strftime("%Y-%m-%d")
     pekan_meta = database.get_pekan_info(cur_name, mon_str)
 
-    sm_summary = f"Ya ({rec['solat_malam_jam'] or '-'}, Dz: {rec['jumlah_dzikir'] or '-'})" if rec["solat_malam_status"] == 1 else f"Tidak (Alasan: {rec['solat_malam_alasan'] or '-'})"
+    if rec["solat_malam_status"] == 1:
+        sm_summary = f"Ya (Jam: {rec['solat_malam_jam'] or '-'})"
+        dz_summary = f"{rec['jumlah_dzikir'] or '-'}"
+    else:
+        sm_summary = f"Tidak (Alasan: {rec['solat_malam_alasan'] or '-'})"
+        dz_summary = "-"
+
     dh_summary = "Ya (✓)" if rec["dhuha_status"] == 1 else f"Tidak (Alasan: {rec['dhuha_alasan'] or '-'})"
     p_summary = "Ya (✓)" if rec["puasa_status"] == 1 else (f"Tidak (Alasan: {rec['puasa_alasan']})" if rec["puasa_alasan"] else "Tidak")
     rw_alasan_str = f" (Alasan: {rec['rowatib_alasan']})" if rec.get("rowatib") != "5 waktu" and rec.get("rowatib_alasan") else ""
@@ -1244,8 +1340,9 @@ async def render_edit_dashboard(update: Update, context: ContextTypes.DEFAULT_TY
         f"🏢 *Posko:* `TANGKIL` (Statis)\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🌙 *Solat Malam:* {sm_summary}\n"
+        f"📿 *Jumlah Dzikir:* `{dz_summary}`\n"
         f"☀️ *Solat Dhuha:* {dh_summary}\n"
-        f"🍃 *Puasa:* {p_summary}\n"
+        f"🍃 *Puasa Senin & Kamis:* {p_summary}\n"
         f"🕌 *Solat Rowatib:* `{rw_summary}`\n"
         f"{extra_minggu}"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -2166,27 +2263,24 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
         all_data = [database.get_laporan_week(n, monday_date) for n in all_names]
         cur_ahad = all_data[0]["ahad_ke"]
 
-        members_summary = []
-        for d in all_data:
-            p_stat = "Hadir (✓)" if d["pengajian_status"] == 1 else "Tidak (✓)"
-            j_stat = f"Rp {d['tata_krama_jijyah']}" if d['tata_krama_jijyah'] else "-"
-            members_summary.append(f"• *{d['nama']}:* {d['filled_days_count']}/7 hr terisi | Pengajian: {p_stat} | Jijyah: `{j_stat}`")
-
-        members_str = "\n".join(members_summary)
+        members_summary = [format_detailed_person_report_text(d) for d in all_data]
+        members_str = "\n━━━━━━━━━━━━━━━━━━━━━━\n".join(members_summary)
 
         text = (
-            "⚙️ *PENGATURAN CETAK KESELURUHAN ORANG*\n"
+            "⚙️ *PENGATURAN CETAK KESELURUHAN ORANG (DETAIL PER POSKO)*\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👥 *Target:* Keseluruhan Anggota ({len(all_names)} Orang)\n"
             f"📅 *Pekan:* `{all_data[0]['bulan']}`\n"
             f"🗓 *Ahad Ke:* `{cur_ahad}`\n"
             f"🏢 *Posko:* `TANGKIL` (Statis)\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "📋 *Status Anggota Saat Ini:*\n"
+            "📋 *Rincian Detail Laporan Seluruh Anggota:*\n\n"
             f"{members_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "Sesuaikan Ahad Ke posko jika diperlukan:"
         )
+        if len(text) > 4000:
+            text = text[:3950] + "\n\n_...(Rincian lengkap tercetak penuh di PDF/Gambar)_"
 
         keyboard = [
             [
@@ -2201,23 +2295,17 @@ async def show_print_settings(update: Update, context: ContextTypes.DEFAULT_TYPE
         ]
     else:
         week_data = database.get_laporan_week(cur_name, monday_date)
-        pengajian_display = "✅ Hadir (✓)" if week_data["pengajian_status"] == 1 else "❌ Tidak (✓)"
-        jijyah_val = week_data["tata_krama_jijyah"] or "-"
+        detailed_member_str = format_detailed_person_report_text(week_data)
 
         text = (
-            f"⚙️ *PENGATURAN PEKAN SEBELUM CETAK*\n"
+            f"⚙️ *PENGATURAN PEKAN SEBELUM CETAK (DETAIL LENGKAP)*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 *Nama:* `{cur_name}`\n"
-            f"📅 *Pekan:* `{week_data['bulan']}`\n"
-            f"🗓 *Ahad Ke:* `{week_data['ahad_ke']}`\n"
-            f"📊 *Data Terisi:* {week_data['filled_days_count']} dari 7 hari\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🕌 *Pengajian:* {pengajian_display}\n"
-            f"🧹 *Piket:* Tidak (✓) [Statis]\n"
-            f"💰 *Jijyah:* `{jijyah_val}`\n"
+            f"{detailed_member_str}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             "Silakan sesuaikan Ahad Ke, Pengajian, atau Jijyah jika diperlukan:"
         )
+        if len(text) > 4000:
+            text = text[:3950] + "\n\n_...(Rincian lengkap tercetak penuh di PDF/Gambar)_"
 
         toggle_pengajian_text = "Ubah Pengajian (ke Tidak)" if week_data["pengajian_status"] == 1 else "Ubah Pengajian (ke Hadir)"
         cur_ahad = week_data["ahad_ke"]
@@ -2374,27 +2462,29 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
             pdf_path, img_paths = pdf_generator.generate_combined_report_bundle(pdf_path, img_prefix, all_data, week_meta)
 
             caption_text = (
-                "📄 *LAPORAN PELAKSANAAN AMANAH PER POSKO*\n"
+                "📄 *LAPORAN PELAKSANAAN AMANAH PER POSKO (DETAIL LENGKAP)*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"🏢 *Posko:* `{POSKO_NAME}`\n"
                 f"🗓 *Ahad Ke:* `{week_meta['ahad_ke']}`\n"
                 f"📅 *Pekan:* `{week_meta['bulan']}`\n"
-                f"👥 *Total Anggota:* {len(all_names)} Orang\n"
-                "📋 *Isi:* Lembar Rekapitulasi Posko + Lembar Detail & Keterangan Lengkap Tiap Anggota"
+                f"👥 *Total Anggota:* {len(all_names)} Orang ({', '.join(all_names)})\n"
+                "📋 *Isi:* Tabel Detail Harian Lengkap (Senin - Minggu: Jam Solat Malam, Jumlah Dzikir, Solat Dhuha, Puasa Senin & Kamis, Solat Rowatib, Keterangan, Pengajian, Piket, Tata Krama)"
             )
 
             if fmt in ["img", "both"]:
-                if len(img_paths) <= 10:
+                if len(img_paths) == 1:
+                    with open(img_paths[0], "rb") as photo_file:
+                        await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=caption_text, parse_mode="Markdown")
+                elif len(img_paths) <= 10:
                     media = []
                     opened_files = []
                     for idx, p in enumerate(img_paths):
                         f = open(p, "rb")
                         opened_files.append(f)
                         if idx == 0:
-                            cap = caption_text + f"\n*(Halaman 1: Rekapitulasi Posko {POSKO_NAME})*"
+                            cap = caption_text + f"\n*(Halaman 1 dari {len(img_paths)})*"
                         else:
-                            p_name = all_data[idx - 1]["nama"]
-                            cap = f"👤 *Lembar Detail:* `{p_name}` (Posko {POSKO_NAME})"
+                            cap = f"📄 *Laporan Detail Posko {POSKO_NAME}* — Halaman {idx + 1} dari {len(img_paths)}"
                         media.append(InputMediaPhoto(media=f, caption=cap, parse_mode="Markdown"))
                     try:
                         await context.bot.send_media_group(chat_id=chat_id, media=media)
@@ -2405,10 +2495,9 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
                     for idx, p in enumerate(img_paths):
                         with open(p, "rb") as photo_file:
                             if idx == 0:
-                                cap = caption_text + f"\n*(Halaman 1: Rekapitulasi Posko {POSKO_NAME})*"
+                                cap = caption_text + f"\n*(Halaman 1 dari {len(img_paths)})*"
                             else:
-                                p_name = all_data[idx - 1]["nama"]
-                                cap = f"👤 *Lembar Detail:* `{p_name}` (Posko {POSKO_NAME})"
+                                cap = f"📄 *Laporan Detail Posko {POSKO_NAME}* — Halaman {idx + 1} dari {len(img_paths)}"
                             await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=cap, parse_mode="Markdown")
 
             if fmt in ["pdf", "both"]:
@@ -2417,7 +2506,7 @@ async def execute_report_output(monday_date: datetime.date, nama: str, target_mo
                         chat_id=chat_id,
                         document=doc_file,
                         filename=f"Laporan_Amanah_Posko_{POSKO_NAME}_Ahad_Ke_{week_meta['ahad_ke']}_{week_meta['monday_date']}.pdf",
-                        caption=caption_text if fmt == "pdf" else f"📄 *Dokumen PDF Resmi Posko {POSKO_NAME} (Rekap & Detail Anggota)*",
+                        caption=caption_text if fmt == "pdf" else f"📄 *Dokumen PDF Resmi Posko {POSKO_NAME} (Detail Lengkap Tiap Anggota)*",
                         parse_mode="Markdown"
                     )
 

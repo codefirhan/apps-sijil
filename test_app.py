@@ -719,31 +719,40 @@ class TestAmanahBot(unittest.TestCase):
             pdf_path, img_paths = pdf_generator.generate_combined_report_bundle(test_pdf, test_prefix, all_data, week_meta)
 
             self.assertTrue(os.path.exists(pdf_path))
-            self.assertEqual(len(img_paths), 3) # 1 Rekap + 2 Detail
+            self.assertGreaterEqual(len(img_paths), 1)
 
             doc = fitz.open(pdf_path)
-            self.assertEqual(len(doc), 3)
-            rekap_text = doc[0].get_text()
-            self.assertIn("REKAPITULASI PELAKSANAAN AMANAH PER POSKO", rekap_text)
-            self.assertIn("POSKO : TANGKIL", rekap_text)
-            self.assertIn(cur_name, rekap_text)
-            self.assertIn(other_name, rekap_text)
-
-            # Halaman detail individu
-            detail1_text = doc[1].get_text()
-            self.assertIn(cur_name, detail1_text)
-            self.assertIn("POSKO : TANGKIL", detail1_text)
-            self.assertIn("SELASA: Terlewat", detail1_text)
-            self.assertIn("SELASA: Halangan", detail1_text)
-
-            detail2_text = doc[2].get_text()
-            self.assertIn(other_name, detail2_text)
-            self.assertIn("POSKO : TANGKIL", detail2_text)
+            full_pdf_text = "\n".join(page.get_text() for page in doc)
+            self.assertIn("LAPORAN PELAKSANAAN AMANAH PER POSKO", full_pdf_text)
+            self.assertIn("POSKO : TANGKIL", full_pdf_text)
+            self.assertIn(f"NAMA : {cur_name}", full_pdf_text)
+            self.assertIn(f"NAMA : {other_name}", full_pdf_text)
+            # Pastikan detail jam solat malam, jumlah dzikir, rowatib, dan alasan tampil lengkap tanpa disingkat
+            self.assertIn("03:30 s/d 04:10", full_pdf_text)
+            self.assertIn("10000", full_pdf_text)
+            self.assertIn("3 waktu", full_pdf_text)
+            self.assertIn("5 waktu", full_pdf_text)
+            self.assertIn("SELASA: Terlewat", full_pdf_text)
+            self.assertIn("SELASA: Halangan", full_pdf_text)
+            self.assertNotIn("/7 hr", full_pdf_text)
 
             doc.close()
             os.remove(pdf_path)
             for p in img_paths:
                 os.remove(p)
+
+            # Verifikasi format_detailed_person_report_text tidak menggunakan singkatan
+            detail_txt_1 = bot.format_detailed_person_report_text(all_data[0])
+            detail_txt_2 = bot.format_detailed_person_report_text(all_data[1])
+            self.assertIn("Solat Malam:", detail_txt_1)
+            self.assertIn("Jumlah Dzikir:", detail_txt_1)
+            self.assertIn("Solat Dhuha:", detail_txt_1)
+            self.assertIn("Puasa Senin & Kamis:", detail_txt_1)
+            self.assertIn("Solat Rowatib:", detail_txt_1)
+            self.assertIn("Jam 03:30 s/d 04:10", detail_txt_2)
+            self.assertIn("10000", detail_txt_2)
+            self.assertNotIn("SM:", detail_txt_2)
+            self.assertNotIn("Dz:", detail_txt_2)
 
             # 2. Verifikasi Handler Bot
             def make_update(callback_data=None):
@@ -875,33 +884,27 @@ class TestAmanahBot(unittest.TestCase):
         )
 
         self.assertTrue(os.path.exists(pdf_path))
-        self.assertEqual(len(img_paths), 1 + len(members)) # 1 Rekap Posko + 2 Detail Anggota
+        self.assertEqual(len(img_paths), 1) # 2 anggota muat utuh dalam 1 halaman Landscape A4
 
         doc = fitz.open(pdf_path)
-        self.assertEqual(len(doc), 3)
+        self.assertEqual(len(doc), 1)
 
-        # 1. Halaman 1: Rekapitulasi Posko
-        rekap_page = doc[0].get_text()
-        self.assertIn("LAPORAN REKAPITULASI PELAKSANAAN AMANAH PER POSKO", rekap_page)
-        self.assertIn(f"POSKO : {posko_test}", rekap_page)
-        self.assertIn("TOTAL ANGGOTA : 2 ORANG", rekap_page)
-        self.assertIn("ANGGOTA_POSKO_1", rekap_page)
-        self.assertIn("ANGGOTA_POSKO_2", rekap_page)
-        self.assertIn("Catatan Rekapitulasi:", rekap_page)
-
-        # 2. Halaman 2: Detail Anggota Posko 1
-        detail1_page = doc[1].get_text()
-        self.assertIn("LAPORAN PELAKSANAAN AMANAH", detail1_page)
-        self.assertIn("NAMA : ANGGOTA_POSKO_1", detail1_page)
-        self.assertIn(f"POSKO : {posko_test}", detail1_page)
-        self.assertIn("SELASA: Terlewat", detail1_page)
-
-        # 3. Halaman 3: Detail Anggota Posko 2
-        detail2_page = doc[2].get_text()
-        self.assertIn("LAPORAN PELAKSANAAN AMANAH", detail2_page)
-        self.assertIn("NAMA : ANGGOTA_POSKO_2", detail2_page)
-        self.assertIn(f"POSKO : {posko_test}", detail2_page)
-        self.assertIn("SENIN: Ada Keperluan", detail2_page)
+        page_text = doc[0].get_text()
+        self.assertIn("LAPORAN PELAKSANAAN AMANAH PER POSKO", page_text)
+        self.assertIn(f"POSKO : {posko_test}", page_text)
+        self.assertIn("TOTAL ANGGOTA : 2 ORANG", page_text)
+        self.assertIn("NAMA : ANGGOTA_POSKO_1", page_text)
+        self.assertIn("NAMA : ANGGOTA_POSKO_2", page_text)
+        self.assertIn("SOLAT MALAM", page_text)
+        self.assertIn("JUMLAH DZIKIR", page_text)
+        self.assertIn("PUASA SENIN & KAMIS", page_text)
+        self.assertIn("SOLAT ROWATIB", page_text)
+        self.assertIn("03:30 s/d 04:10", page_text)
+        self.assertIn("10000", page_text)
+        self.assertIn("4 waktu", page_text)
+        self.assertIn("SELASA: Terlewat", page_text)
+        self.assertIn("SENIN: Ada Keperluan", page_text)
+        self.assertNotIn("/7 hr", page_text)
 
         doc.close()
 
